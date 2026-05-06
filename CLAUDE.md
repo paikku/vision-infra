@@ -34,6 +34,12 @@ Read `README.md` (operator-facing, Korean) and `docs/architecture.md`
      is consumed by `vision/.github/workflows/build.yml` and
      `videonizer/.github/workflows/build.yml`. Breaking changes need
      PRs in all three repos.
+   - **DB schema lives in `videonizer`, not here.** Tables, columns,
+     indexes go through `videonizer/alembic/`. The `db/init/*.sql`
+     files in this repo are reserved for things that must exist
+     *before* any migration runs — postgres extensions, role grants.
+     If a PR adds a `CREATE TABLE` to `db/init/`, reject it and move
+     the change into a videonizer alembic revision.
 
 3. **Language scope.**
    - Docs (`docs/*.md`, `CLAUDE.md`, `AGENTS.md`, code comments) →

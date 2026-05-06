@@ -20,6 +20,38 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
         └─→ minio:9000 (오브젝트 스토리지)
 ```
 
+## 어디서 뭘 바꾸나 (cheat sheet)
+
+`vision-infra` 는 **배포 토폴로지** 만 책임집니다. 코드, 스키마, API 계약은 앱 레포 소유.
+
+| 바꾸고 싶은 것 | 어느 레포 | 어느 파일 |
+|---|---|---|
+| 프론트엔드 페이지 / 컴포넌트 | `vision` | `src/`, `app/` |
+| FastAPI 라우트 / 비즈니스 로직 | `videonizer` | `app/routers/`, `app/main.py` |
+| **DB 스키마 / 마이그레이션** | `videonizer` | `app/models.py` + `alembic/versions/` |
+| API 계약 (URL, 스키마, 상태 코드) | `videonizer` 가 원본, `vision` 이 사본 | 둘 다 `API_CONTRACT.md` |
+| 모델 가중치, ffmpeg 옵션 | `videonizer` | `weights/`, `app/normalize.py` |
+| nginx 라우팅 (`/v1` 등) | **`vision-infra`** | `nginx/conf.d/default.conf` |
+| postgres 익스텐션 (스키마 *전*) | **`vision-infra`** | `db/init/*.sql` |
+| postgres / minio 리소스 한도 | **`vision-infra`** | `compose/docker-compose.prod.yml` |
+| 서비스 의존성 / healthcheck | **`vision-infra`** | `compose/docker-compose.yml` |
+| 운영자 env (이미지 태그, 자격증명) | **`vision-infra`** | `.env` |
+| CI 빌드 로직 (재사용) | **`vision-infra`** | `.github/workflows/reusable-build-push.yml` |
+| CI 빌드 호출 (얇은 caller) | `vision`, `videonizer` | 각자 `.github/workflows/build.yml` |
+
+### 자주 헷갈리는 경계
+
+- **DB 스키마는 `videonizer/alembic/`**, `vision-infra/db/init/` 이 아닙니다.
+  `db/init/` 는 마이그레이션이 돌기 *전* 에 있어야 하는 것 (익스텐션, 역할,
+  권한) 만. 테이블 / 컬럼은 항상 alembic 으로.
+- **vision 의 자체 nginx 는 단독 배포용**. `vision-infra` 가 띄울 땐 엣지
+  nginx 가 그 역할을 하고 vision 컨테이너는 node-only 모드로 돕니다.
+- **`videonizer` 의 자체 compose 는 백엔드 단독 dev 용**. 운영에선
+  `vision-infra` 가 띄움. 서비스 이름 (`postgres`, `minio`) 은 양쪽이
+  같으므로 백엔드 코드는 어느 환경에서 돌아도 동일.
+
+---
+
 ## 디렉터리 구조
 
 ```
