@@ -44,8 +44,9 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 - **DB 스키마는 `videonizer/alembic/`**, `vision-infra/db/init/` 이 아닙니다.
   `db/init/` 는 마이그레이션이 돌기 *전* 에 있어야 하는 것 (익스텐션, 역할,
   권한) 만. 테이블 / 컬럼은 항상 alembic 으로.
-- **vision 의 자체 nginx 는 단독 배포용**. `vision-infra` 가 띄울 땐 엣지
-  nginx 가 그 역할을 하고 vision 컨테이너는 node-only 모드로 돕니다.
+- **vision 컨테이너는 단일 프로세스 (`node server.js`, :3000)** — TLS / 라우팅 /
+  body 한도는 모두 컨테이너 밖의 리버스 프록시 책임. `vision-infra` 가 띄울 땐
+  엣지 nginx 가, 단독 배포 시엔 외부 nginx/Caddy/ALB 가 그 역할.
 - **`videonizer` 의 자체 compose 는 백엔드 단독 dev 용**. 운영에선
   `vision-infra` 가 띄움. 서비스 이름 (`postgres`, `minio`) 은 양쪽이
   같으므로 백엔드 코드는 어느 환경에서 돌아도 동일.

@@ -90,17 +90,6 @@ services:
   vision:
     image: ${VISION_IMAGE:-vision:dev}
     networks: [vision_net]
-    # vision's container ships with supervisord+nginx+node — but in this
-    # stack the edge nginx handles TLS/routing, so run Node only. The
-    # standalone Next.js server lives at /app/server.js (set by the
-    # Next.js `output: "standalone"` build).
-    working_dir: /app
-    entrypoint: []
-    command: ["node", "/app/server.js"]
-    environment:
-      NODE_ENV: production
-      PORT: "3000"
-      HOSTNAME: "0.0.0.0"
     depends_on:
       videonizer:
         condition: service_healthy

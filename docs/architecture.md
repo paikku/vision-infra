@@ -9,7 +9,7 @@ before changing service shape, volume layout, or network topology.
 | Service              | Image                      | Listens | Persistence                                | Notes                                                             |
 | -------------------- | -------------------------- | ------- | ------------------------------------------ | ----------------------------------------------------------------- |
 | `nginx` (edge)       | `nginx:1.27-alpine`        | 80, 443 | `nginx/certs/` (read-only mount)           | Only service binding host ports. Routes to `vision`, `videonizer`. |
-| `vision`             | `vision:dev` (or registry) | 3000    | none                                       | Runs Next.js standalone (`node /app/server.js`); skips bundled supervisord+nginx. |
+| `vision`             | `vision:dev` (or registry) | 3000    | none                                       | Single-process Next.js standalone (`node server.js`). No nginx in the image. |
 | `videonizer`         | `videonizer:dev`           | 8000    | `/srv/tmp` (job scratch, prod bind-mount)  | FastAPI app. Healthcheck on `/healthz`.                           |
 | `videonizer-migrate` | `videonizer:dev`           | none    | none                                       | One-shot `alembic upgrade head` runs before `videonizer` starts. |
 | `postgres`           | `postgres:16-alpine`       | 5432    | `pgdata` named volume (prod bind-mount)    | `db/init/*.sql` applied on first start (empty volume only).      |
@@ -33,20 +33,17 @@ The `/edge-healthz` endpoint is intentionally local — Docker can probe
 nginx without depending on upstream readiness, which avoids start-up
 deadlocks.
 
-## Why vision skips its own nginx in this stack
+## Why there's only one nginx in the stack
 
-`vision/Dockerfile` ships a supervisord that runs both Next.js and a
-local nginx. That image is self-contained for environments where vision
-is deployed alone. In the `vision-infra` stack the edge nginx already
-handles TLS, body limits, and routing, so the per-app nginx is dead
-weight (and adds an extra hop). The compose override sets
-`entrypoint: []` + `command: ["node", "/app/server.js"]` to bypass
-supervisord — the rest of the image (`/app/.next/standalone`, public
-assets, etc.) is reused as-is.
+`vision/Dockerfile` is intentionally a single-process Next.js
+standalone runner — `node server.js` on port 3000, nothing else.
+TLS, body limits, and HTTP-level routing are the edge nginx's job in
+this stack (and would be a K8s Ingress's job in a cluster). The vision
+image stays small and the data path is one hop instead of two.
 
-If you ever switch `vision` to run on its own without `vision-infra`
-fronting it, the supervisord path still works; this override is only
-active inside this compose stack.
+For a standalone vision deployment without `vision-infra`, the same
+applies — put a reverse proxy (nginx, Caddy, ALB) in front of port
+3000. Don't add nginx back into the image.
 
 ## env var ownership
 
