@@ -26,10 +26,12 @@ Read `README.md` (operator-facing, Korean) and `docs/architecture.md`
    - Service names (`postgres`, `minio`, `videonizer`, `vision`) are
      referenced by app env vars (`DATABASE_URL=...@postgres:5432`,
      `MINIO_ENDPOINT=minio:9000`). Renaming a service breaks the app.
-   - The routing table in `nginx/conf.d/default.conf` mirrors the
-     `vision` API client (`/v1/*` → videonizer). If videonizer's URL
-     prefix changes, both `vision/src/lib/apiBase.ts` and this nginx
-     config have to move together.
+   - The routing prefix in `nginx/conf.d/default.conf` (`/v1/*` →
+     videonizer) is hardcoded to videonizer's current URL surface. If
+     videonizer changes its URL prefix, this nginx config must change
+     in lockstep. (Managing the API surface itself — request/response
+     schemas, status codes — is **not** this repo's responsibility;
+     that lives in the app repos.)
    - The reusable workflow input contract (`reusable-build-push.yml`)
      is consumed by `vision/.github/workflows/build.yml` and
      `videonizer/.github/workflows/build.yml`. Breaking changes need

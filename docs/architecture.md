@@ -1,8 +1,10 @@
-# Architecture & K8s migration notes
+# Architecture
 
-This document captures the load-bearing decisions in the compose files and
-calls out what changes when the stack is lifted onto Kubernetes. Read this
-before changing service shape, volume layout, or network topology.
+This document captures the load-bearing decisions in the compose files —
+the canonical operational form for this stack. K8s migration content
+appears at the end as **future-reference material** (§5); it is not the
+primary purpose of this repo. Read this doc before changing service
+shape, volume layout, or network topology.
 
 ## Compose service map
 
@@ -58,7 +60,14 @@ applies — put a reverse proxy (nginx, Caddy, ALB) in front of port
   the build leaves `NEXT_PUBLIC_VIDEONIZER_URL` empty so the bundle
   emits relative `/v1/...` paths.
 
-## K8s migration
+## Future expansion: K8s migration
+
+> Compose is the canonical operational form. The notes below describe a
+> potential future K8s migration — they exist so the compose files stay
+> K8s-friendly today (named volumes, env-driven config, service-name
+> DNS, healthchecks), but actually moving to K8s is **not a goal of
+> this repo right now**. Skip this section unless you're scoping that
+> migration.
 
 The compose files are written so the move to K8s is mechanical. Each
 service maps to a `Deployment` + `Service`, named volumes become PVCs,

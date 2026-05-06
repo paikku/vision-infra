@@ -22,14 +22,13 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 
 ## 어디서 뭘 바꾸나 (cheat sheet)
 
-`vision-infra` 는 **배포 토폴로지** 만 책임집니다. 코드, 스키마, API 계약은 앱 레포 소유.
+`vision-infra` 는 **배포 토폴로지** 만 책임집니다. 코드와 스키마는 앱 레포 소유.
 
 | 바꾸고 싶은 것 | 어느 레포 | 어느 파일 |
 |---|---|---|
 | 프론트엔드 페이지 / 컴포넌트 | `vision` | `src/`, `app/` |
 | FastAPI 라우트 / 비즈니스 로직 | `videonizer` | `app/routers/`, `app/main.py` |
 | **DB 스키마 / 마이그레이션** | `videonizer` | `app/models.py` + `alembic/versions/` |
-| API 계약 (URL, 스키마, 상태 코드) | `videonizer` 가 원본, `vision` 이 사본 | 둘 다 `API_CONTRACT.md` |
 | 모델 가중치, ffmpeg 옵션 | `videonizer` | `weights/`, `app/normalize.py` |
 | nginx 라우팅 (`/v1` 등) | **`vision-infra`** | `nginx/conf.d/default.conf` |
 | postgres 익스텐션 (스키마 *전*) | **`vision-infra`** | `db/init/*.sql` |
@@ -67,7 +66,7 @@ nginx/
 db/
   init/01-init.sql         # 첫 실행 시 postgres에 적용되는 init SQL
 docs/
-  architecture.md          # 아키텍처 + K8s 마이그레이션 노트 (영문)
+  architecture.md          # 아키텍처 + 향후 확장 (K8s) 노트 (영문)
 .github/workflows/
   reusable-build-push.yml  # 앱 레포에서 호출하는 재사용 워크플로
   deploy.yml               # 운영 배포 워크플로
@@ -129,12 +128,16 @@ docker compose --env-file /appdata/app/vision-infra/.env \
 이미지 빌드 → 레지스트리 푸시 → 매니페스트 태깅이 한 곳에서 관리되어
 파이프라인 드리프트가 발생하지 않습니다.
 
-## K8s 확장 메모
+## 향후 확장 (K8s 등)
 
-자세한 내용은 `docs/architecture.md` 참조. 핵심 원칙:
+이 레포의 핵심 목적은 **compose 기반 운영** 의 단일 기준점을 두는 것.
+K8s 이행은 핵심 목적은 아니지만, compose 작성 시 아래 원칙을 지키면
+나중에 매니페스트 변환 비용이 작아지는 부수 효과가 있어서 그대로
+따르고 있음. 자세한 내용은 `docs/architecture.md` 의 "Future
+expansion" 절 참고.
 
-1. 모든 볼륨은 named volume (PVC 1:1 매핑)
-2. 모든 설정은 env var (ConfigMap/Secret 매핑)
-3. 모든 서비스에 healthcheck (readiness/liveness probe로 전환)
+1. 모든 볼륨은 named volume (PVC 1:1 매핑 가능)
+2. 모든 설정은 env var (ConfigMap/Secret 으로 직행)
+3. 모든 서비스에 healthcheck (readiness/liveness probe 로 전환)
 4. 서비스 간 통신은 항상 서비스 이름 기반 (ClusterIP 동일 모델)
-5. host network/host port 바인딩 없음 (엣지 nginx만 80/443 바인딩 → Ingress로 전환)
+5. host network/host port 바인딩 없음 (엣지 nginx 만 80/443 바인딩 → Ingress 로 전환)
