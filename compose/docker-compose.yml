@@ -79,8 +79,12 @@ services:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)\""]
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 20s
+      retries: 12
+      # Generous start_period — videonizer eagerly resolves segmentation
+      # backends at import time, and the first request can also pre-warm
+      # the SAM model. 60s gives the cold-start path room without false
+      # unhealthy flips during deploy.
+      start_period: 60s
     restart: unless-stopped
 
   vision:
