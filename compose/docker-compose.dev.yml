@@ -1,0 +1,43 @@
+# Dev override — build images from sibling app repos instead of pulling
+# from a registry, expose internal ports for direct debugging, generate
+# self-signed TLS certs on first nginx start.
+#
+# Usage (from compose/):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Assumes the layout:
+#   parent/
+#     vision/
+#     videonizer/
+#     vision-infra/   <- you are here
+
+services:
+  videonizer-migrate:
+    build:
+      context: ../../videonizer
+      dockerfile: Dockerfile
+
+  videonizer:
+    build:
+      context: ../../videonizer
+      dockerfile: Dockerfile
+    ports:
+      # Direct access for `curl localhost:8000/healthz` and similar.
+      - "8000:8000"
+
+  vision:
+    build:
+      context: ../../vision
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+
+  minio:
+    ports:
+      # MinIO console for browsing buckets in dev.
+      - "9000:9000"
+      - "9001:9001"
+
+  postgres:
+    ports:
+      - "5432:5432"

@@ -1,0 +1,146 @@
+# Base compose — defines the full vision stack: edge nginx + vision +
+# videonizer + postgres + minio. Concrete deployment behavior (build vs
+# pull, host vs named-volume mounts, resource limits) lives in the
+# `docker-compose.dev.yml` / `docker-compose.prod.yml` overrides.
+#
+# All services join the `vision_net` bridge so service names resolve as
+# DNS — DATABASE_URL=...@postgres:5432 / MINIO_ENDPOINT=minio:9000 work
+# without any host networking. This is the same model used by a K8s
+# Service: name resolution within a single namespace.
+
+networks:
+  vision_net:
+    driver: bridge
+
+volumes:
+  pgdata: {}
+  miniodata: {}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    networks: [vision_net]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-videonizer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-videonizer}
+      POSTGRES_DB: ${POSTGRES_DB:-videonizer}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-videonizer}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    networks: [vision_net]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || curl -fsS http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  videonizer-migrate:
+    image: ${VIDEONIZER_IMAGE:-videonizer:dev}
+    networks: [vision_net]
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  videonizer:
+    image: ${VIDEONIZER_IMAGE:-videonizer:dev}
+    networks: [vision_net]
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      videonizer-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  vision:
+    image: ${VISION_IMAGE:-vision:dev}
+    networks: [vision_net]
+    # vision's container ships with supervisord+nginx+node — but in this
+    # stack the edge nginx handles TLS/routing, so run Node only. The
+    # standalone Next.js server lives at /app/server.js (set by the
+    # Next.js `output: "standalone"` build).
+    working_dir: /app
+    entrypoint: []
+    command: ["node", "/app/server.js"]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    depends_on:
+      videonizer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  nginx-cert-init:
+    # python:3.12-slim ships openssl out of the box — picked because the
+    # bootstrap must work in air-gapped environments where `apk add` /
+    # `apt-get install` would fail. Drop it for a leaner image only if
+    # you can guarantee egress to the package mirror.
+    image: python:3.12-slim
+    volumes:
+      - ../nginx/certs:/certs
+      - ../nginx/cert-init.sh:/cert-init.sh:ro
+    entrypoint: ["sh", "/cert-init.sh"]
+    restart: "no"
+
+  nginx:
+    image: nginx:1.27-alpine
+    networks: [vision_net]
+    ports:
+      - "${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_HTTPS_PORT:-443}:443"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/conf.d:/etc/nginx/conf.d:ro
+      - ../nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      nginx-cert-init:
+        condition: service_completed_successfully
+      vision:
+        condition: service_started
+      videonizer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/edge-healthz | grep -q ok || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped

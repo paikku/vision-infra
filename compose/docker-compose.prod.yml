@@ -1,0 +1,131 @@
+# Prod override — pulls registry-tagged images (no build), bind-mounts
+# data under /appdata/storage so backups and disk monitoring see all
+# project state in one tree, applies resource limits matched to the
+# khavipw01 host (16 vCPU / 31Gi RAM).
+#
+# Usage (from compose/):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Pre-flight (one-time, run as appuser, UID/GID 1000):
+#
+#   mkdir -p /appdata/storage/vision/{postgres,minio,temp,certs}
+#   mkdir -p /appdata/logs/vision/{nginx,postgres,videonizer}
+#   mkdir -p /appdata/backup/vision
+#
+#   # Operator-managed .env at /appdata/app/vision-infra/.env with
+#   # rotated credentials (POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD /
+#   # MINIO_SECRET_KEY etc) — chmod 600.
+#
+#   # Mount real TLS certs at /appdata/storage/vision/certs/{fullchain,privkey}.pem
+#   # before starting nginx; otherwise edge serves self-signed.
+
+services:
+  postgres:
+    user: "1000:1000"
+    environment:
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command: >
+      postgres
+        -c shared_buffers=512MB
+        -c effective_cache_size=2GB
+        -c work_mem=32MB
+        -c maintenance_work_mem=128MB
+        -c max_connections=50
+        -c log_min_duration_statement=500
+    volumes:
+      - /appdata/storage/vision/postgres:/var/lib/postgresql/data
+      - /appdata/logs/vision/postgres:/var/log/postgresql
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  minio:
+    user: "1000:1000"
+    environment:
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    volumes:
+      - /appdata/storage/vision/minio:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  videonizer-migrate:
+    user: "1000:1000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256M
+
+  videonizer:
+    user: "1000:1000"
+    environment:
+      MAX_CONCURRENT_JOBS: "6"
+      SEGMENT_MAX_CONCURRENT: "2"
+      TEMP_DIR: "/srv/tmp"
+    volumes:
+      - /appdata/storage/vision/temp:/srv/tmp
+      - /appdata/logs/vision/videonizer:/var/log/app
+    deploy:
+      resources:
+        limits:
+          cpus: "12"
+          memory: 14G
+        reservations:
+          cpus: "4"
+          memory: 4G
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  vision:
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+
+  nginx:
+    volumes:
+      - /appdata/storage/vision/certs:/etc/nginx/certs:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+# Override dev's named volumes with bind mounts so backups and disk
+# monitoring see project state under one tree.
+volumes:
+  pgdata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /appdata/storage/vision/postgres
+  miniodata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /appdata/storage/vision/minio

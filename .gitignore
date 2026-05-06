@@ -1,0 +1,13 @@
+# Operator-managed secrets — keep .env local
+.env
+*.env.local
+
+# Local TLS certs (generated or copied in)
+nginx/certs/*
+!nginx/certs/.gitkeep
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
