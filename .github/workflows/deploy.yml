@@ -35,8 +35,11 @@ jobs:
         # Replace this stub with your real deploy step (ssh + compose up,
         # or kubectl apply once K8s is in play). Kept as a stub so the
         # workflow file is committable without infra access tokens.
+        env:
+          REGISTRY_URL: ${{ vars.REGISTRY_URL || 'ghcr.io' }}
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX || 'paikku' }}
         run: |
           echo "Would deploy:"
-          echo "  vision:     ghcr.io/paikku/vision:${{ inputs.vision_tag }}"
-          echo "  videonizer: ghcr.io/paikku/videonizer:${{ inputs.videonizer_tag }}"
-          echo "Wire up SSH key + remote `docker compose pull && up -d` here."
+          echo "  vision:     ${REGISTRY_URL}/${IMAGE_PREFIX}/vision:${{ inputs.vision_tag }}"
+          echo "  videonizer: ${REGISTRY_URL}/${IMAGE_PREFIX}/videonizer:${{ inputs.videonizer_tag }}"
+          echo "Wire up SSH key + remote 'docker compose pull && up -d' here."
