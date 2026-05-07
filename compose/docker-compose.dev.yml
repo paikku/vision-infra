@@ -17,12 +17,6 @@
 # (NODE_TAG / FFMPEG_TAG / PYTHON_TAG) inherit defaults from the
 # Dockerfile when unset.
 #
-# pip mirror (videonizer only): set PIP_INDEX_URL / PIP_EXTRA_INDEX_URL /
-# PIP_TRUSTED_HOST in `.env` to redirect pip during image build at an
-# internal PyPI. See ../../videonizer/.env.example for details — these
-# vars are owned by videonizer and only forwarded here so vision-infra's
-# dev build can reuse them.
-#
 # Usage (from compose/):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 #
@@ -42,9 +36,6 @@ services:
         IMAGE_PREFIX: ${IMAGE_PREFIX}
         FFMPEG_TAG: ${FFMPEG_TAG:-7.1-ubuntu}
         PYTHON_TAG: ${PYTHON_TAG:-3.12-slim}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
-        PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-}
-        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
 
   videonizer:
     build:
@@ -55,9 +46,6 @@ services:
         IMAGE_PREFIX: ${IMAGE_PREFIX}
         FFMPEG_TAG: ${FFMPEG_TAG:-7.1-ubuntu}
         PYTHON_TAG: ${PYTHON_TAG:-3.12-slim}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
-        PIP_EXTRA_INDEX_URL: ${PIP_EXTRA_INDEX_URL:-}
-        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     environment:
       UVICORN_RELOAD: "1"
       WATCHFILES_FORCE_POLLING: "true"
