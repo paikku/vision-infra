@@ -1,6 +1,15 @@
-# Dev override — build images from sibling app repos instead of pulling
-# from a registry, expose internal ports for direct debugging, generate
-# self-signed TLS certs on first nginx start.
+# Dev override — build images from sibling app repos with hot reload,
+# expose internal ports for direct debugging, generate self-signed TLS
+# certs on first nginx start.
+#
+# Hot reload:
+#   - vision     → builds the Dockerfile `dev` target (`next dev` / HMR);
+#                  ../../vision is bind-mounted onto /app, with anonymous
+#                  volumes guarding /app/node_modules and /app/.next so
+#                  the host doesn't shadow container state.
+#   - videonizer → uvicorn `--reload` (UVICORN_RELOAD=1); ../../videonizer/app
+#                  bind-mounted onto /srv/app.
+#   - videonizer-migrate runs once and exits — no reload needed.
 #
 # The app Dockerfiles' FROM lines pull base images (node, python, ffmpeg)
 # from ${REGISTRY_URL}/${IMAGE_PREFIX}/..., so REGISTRY_URL and
@@ -37,6 +46,11 @@ services:
         IMAGE_PREFIX: ${IMAGE_PREFIX}
         FFMPEG_TAG: ${FFMPEG_TAG:-7.1-ubuntu}
         PYTHON_TAG: ${PYTHON_TAG:-3.12-slim}
+    environment:
+      UVICORN_RELOAD: "1"
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ../../videonizer/app:/srv/app
     ports:
       # Direct access for `curl localhost:8000/healthz` and similar.
       - "8000:8000"
@@ -45,10 +59,21 @@ services:
     build:
       context: ../../vision
       dockerfile: Dockerfile
+      target: dev
       args:
         REGISTRY_URL: ${REGISTRY_URL}
         IMAGE_PREFIX: ${IMAGE_PREFIX}
         NODE_TAG: ${NODE_TAG:-21-alpine}
+    environment:
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../../vision:/app
+      # Anonymous volumes preserve container-side state from being shadowed
+      # by the host bind mount above. Without these, the host's empty (or
+      # mismatched) node_modules/.next would replace what was baked into
+      # the dev image, and `next dev` would crash on first request.
+      - /app/node_modules
+      - /app/.next
     ports:
       - "3000:3000"
 
