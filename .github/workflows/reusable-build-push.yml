@@ -4,30 +4,16 @@
 # in one place. App repos only need a thin caller workflow that supplies
 # the image name and (optionally) build args.
 #
-# Caller example (vision/.github/workflows/build.yml):
+# All images live under a single private registry path:
+#   ${REGISTRY_URL}/${IMAGE_PREFIX}/<name>:<tag>
 #
-#   on:
-#     push:
-#       branches: [main]
-#     pull_request:
-#   jobs:
-#     build:
-#       uses: paikku/vision-infra/.github/workflows/reusable-build-push.yml@main
-#       with:
-#         image_name: vision
-#         context: .
-#         push: ${{ github.event_name == 'push' }}
-#       secrets: inherit
+# Configuration:
+#   - vars.REGISTRY_URL  (e.g. harbor.example.com)  REQUIRED for push
+#   - vars.IMAGE_PREFIX  (e.g. paikku)              REQUIRED for push
+#   - secrets.REGISTRY_USERNAME / secrets.REGISTRY_PASSWORD  required for push
 #
-# Registry config resolution (per field):
-#   1. workflow input (`registry`, `image_prefix`)
-#   2. repo/org variable (`vars.REGISTRY_URL`, `vars.IMAGE_PREFIX`)
-#   3. fallback (`ghcr.io`, lowercased repo owner)
-#
-# Login credentials:
-#   - secrets.REGISTRY_USERNAME / secrets.REGISTRY_PASSWORD when set
-#     (private Harbor / mirror)
-#   - falls back to github.actor + secrets.GITHUB_TOKEN (ghcr.io)
+# When inputs.push is false (PR builds) the workflow skips login and
+# tag construction can fall back to ghcr.io for build-only verification.
 
 name: reusable-build-push
 
@@ -35,7 +21,7 @@ on:
   workflow_call:
     inputs:
       image_name:
-        description: "Image name (without registry prefix), e.g. `vision`"
+        description: "Image name (last segment under IMAGE_PREFIX), e.g. `vision`"
         required: true
         type: string
       context:
@@ -53,18 +39,8 @@ on:
         required: false
         default: false
         type: boolean
-      registry:
-        description: "Registry hostname override (e.g. harbor.example.com). Falls back to vars.REGISTRY_URL, then ghcr.io."
-        required: false
-        default: ""
-        type: string
-      image_prefix:
-        description: "Path under registry (e.g. `paikku`). Falls back to vars.IMAGE_PREFIX, then lowercased repo owner."
-        required: false
-        default: ""
-        type: string
       build_args:
-        description: "Multi-line BUILD_ARG=value pairs"
+        description: "Multi-line BUILD_ARG=value pairs (REGISTRY_URL / IMAGE_PREFIX are auto-injected)"
         required: false
         default: ""
         type: string
@@ -84,26 +60,33 @@ jobs:
       - name: Resolve registry config
         id: cfg
         env:
-          INPUT_REGISTRY: ${{ inputs.registry }}
-          INPUT_PREFIX: ${{ inputs.image_prefix }}
-          VAR_REGISTRY: ${{ vars.REGISTRY_URL }}
-          VAR_PREFIX: ${{ vars.IMAGE_PREFIX }}
+          REGISTRY_URL: ${{ vars.REGISTRY_URL }}
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
           IMAGE_NAME: ${{ inputs.image_name }}
+          PUSH: ${{ inputs.push }}
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
-          registry="${INPUT_REGISTRY:-${VAR_REGISTRY:-ghcr.io}}"
-
-          if [ -n "$INPUT_PREFIX" ]; then
-            prefix="$INPUT_PREFIX"
-          elif [ -n "$VAR_PREFIX" ]; then
-            prefix="$VAR_PREFIX"
+          if [ "$PUSH" = "true" ]; then
+            : "${REGISTRY_URL:?vars.REGISTRY_URL must be set to push images}"
+            : "${IMAGE_PREFIX:?vars.IMAGE_PREFIX must be set to push images}"
+            registry="$REGISTRY_URL"
+            prefix="$IMAGE_PREFIX"
           else
-            prefix=$(echo "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
+            # PR build-only: fall back to ghcr.io / repo-owner so tag
+            # construction stays well-formed even when registry vars
+            # aren't configured (forks, new repos).
+            registry="${REGISTRY_URL:-ghcr.io}"
+            if [ -n "$IMAGE_PREFIX" ]; then
+              prefix="$IMAGE_PREFIX"
+            else
+              prefix=$(echo "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
+            fi
           fi
 
           base="${registry}/${prefix}/${IMAGE_NAME}"
           {
             echo "registry=${registry}"
+            echo "prefix=${prefix}"
             echo "image_base=${base}"
             echo "sha_tag=${base}:${GITHUB_SHA::12}"
             echo "branch_tag=${base}:${GITHUB_REF_NAME//\//-}"
@@ -114,8 +97,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ steps.cfg.outputs.registry }}
-          username: ${{ secrets.REGISTRY_USERNAME != '' && secrets.REGISTRY_USERNAME || github.actor }}
-          password: ${{ secrets.REGISTRY_PASSWORD != '' && secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -125,6 +108,12 @@ jobs:
           tags: |
             ${{ steps.cfg.outputs.sha_tag }}
             ${{ steps.cfg.outputs.branch_tag }}
-          build-args: ${{ inputs.build_args }}
+          # Auto-inject REGISTRY_URL / IMAGE_PREFIX so app Dockerfiles can
+          # construct FROM lines from the same single source of truth.
+          # Caller-provided build_args are appended after and win on conflict.
+          build-args: |
+            REGISTRY_URL=${{ steps.cfg.outputs.registry }}
+            IMAGE_PREFIX=${{ steps.cfg.outputs.prefix }}
+            ${{ inputs.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -24,7 +24,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate compose
+        env:
+          REGISTRY_URL: ${{ vars.REGISTRY_URL }}
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
         run: |
+          : "${REGISTRY_URL:?vars.REGISTRY_URL must be set}"
+          : "${IMAGE_PREFIX:?vars.IMAGE_PREFIX must be set}"
           cd compose
           docker compose \
             -f docker-compose.yml \
@@ -36,10 +41,10 @@ jobs:
         # or kubectl apply once K8s is in play). Kept as a stub so the
         # workflow file is committable without infra access tokens.
         env:
-          REGISTRY_URL: ${{ vars.REGISTRY_URL || 'ghcr.io' }}
-          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX || 'paikku' }}
+          REGISTRY_URL: ${{ vars.REGISTRY_URL }}
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
         run: |
           echo "Would deploy:"
           echo "  vision:     ${REGISTRY_URL}/${IMAGE_PREFIX}/vision:${{ inputs.vision_tag }}"
           echo "  videonizer: ${REGISTRY_URL}/${IMAGE_PREFIX}/videonizer:${{ inputs.videonizer_tag }}"
-          echo "Wire up SSH key + remote 'docker compose pull && up -d' here."
+          echo "Wire up SSH key + remote 'docker login + docker compose pull && up -d' here."
