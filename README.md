@@ -34,7 +34,7 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 | postgres 익스텐션 (스키마 *전*) | **`vision-infra`** | `db/init/*.sql` |
 | postgres / minio 리소스 한도 | **`vision-infra`** | `compose/docker-compose.prod.yml` |
 | 서비스 의존성 / healthcheck | **`vision-infra`** | `compose/docker-compose.yml` |
-| 운영자 env (이미지 태그, 자격증명) | **`vision-infra`** | `.env` |
+| 운영자 env (레지스트리, 자격증명, 태그) | **`vision-infra`** | `.env` |
 | CI 빌드 로직 (재사용) | **`vision-infra`** | `.github/workflows/reusable-build-push.yml` |
 | CI 빌드 호출 (얇은 caller) | `vision`, `videonizer` | 각자 `.github/workflows/build.yml` |
 
@@ -73,6 +73,30 @@ docs/
 .env.example               # 운영자 환경변수 샘플
 ```
 
+## 이미지 경로 컨벤션
+
+모든 이미지(앱 + 베이스)는 단일 private registry 경로에서 가져옵니다:
+
+```
+${REGISTRY_URL}/${IMAGE_PREFIX}/<name>:<tag>
+```
+
+미러해야 할 이미지 (예: `harbor.example.com/paikku/` 아래):
+
+| name | upstream |
+|---|---|
+| `vision` | (CI 가 자동 푸시) |
+| `videonizer` | (CI 가 자동 푸시) |
+| `postgres` | `docker.io/library/postgres` |
+| `minio` | `docker.io/minio/minio` |
+| `nginx` | `docker.io/library/nginx` |
+| `python` | `docker.io/library/python` (cert-init / videonizer 베이스) |
+| `node` | `docker.io/library/node` (vision 베이스) |
+| `ffmpeg` | `docker.io/jrottenberg/ffmpeg` (videonizer 베이스) |
+
+`REGISTRY_URL`/`IMAGE_PREFIX`/`REGISTRY_USERNAME`/`REGISTRY_PASSWORD` 는
+`.env` 에서 설정 (CI 에서는 GitHub repo/org `vars` + `secrets` 로 동일한 이름).
+
 ## 사전 준비
 
 상위 디렉터리에 `vision`, `videonizer` 레포가 형제로 클론되어 있어야 합니다.
@@ -89,15 +113,15 @@ parent/
 ```bash
 # 1. 환경변수 준비 (compose/ 가 .env 를 읽음)
 cp .env.example .env
+# .env 에 REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 채우기
 
-# 2. 앱 이미지 미리 빌드 (또는 dev override의 build로 자동 빌드)
-(cd ../vision && docker build -t vision:dev .)
-(cd ../videonizer && docker build -t videonizer:dev .)
+# 2. 레지스트리 로그인 (1회 — ~/.docker/config.json 에 캐싱됨)
+docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
 
-# 3. 스택 기동
+# 3. 스택 기동 (베이스 이미지는 pull, 앱 이미지는 sibling 레포에서 빌드)
 cd compose
 docker compose --env-file ../.env \
-  -f docker-compose.yml -f docker-compose.dev.yml up -d
+  -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 기동 확인:
@@ -109,14 +133,42 @@ curl -sS http://localhost/                   # vision 프론트엔드
 docker compose ps                            # 모든 서비스 healthy 인지
 ```
 
+### 단일 이미지만 빌드 / 디버깅
+
+`docker compose build` 가 `.env` 를 자동 인식하므로 raw `docker build` 보다
+편합니다:
+
+```bash
+cd vision-infra/compose
+docker compose --env-file ../.env \
+  -f docker-compose.yml -f docker-compose.dev.yml build vision
+```
+
+raw `docker build` 가 꼭 필요하면 `.env` 를 셸로 export 하고 build args 를
+명시해야 합니다 (compose 와 달리 `docker build` 는 `.env` 를 안 읽음):
+
+```bash
+set -a && . vision-infra/.env && set +a
+docker build \
+  --build-arg REGISTRY_URL \
+  --build-arg IMAGE_PREFIX \
+  --build-arg NODE_TAG \
+  -t vision:dev vision/
+```
+
 ## 운영 배포 (khavipw01)
 
 ```bash
 # 1. 사전 준비 (1회) — docker-compose.prod.yml 상단 주석 참고.
-# 2. 운영 .env 는 /appdata/app/vision-infra/.env 에 chmod 600 으로 배치.
-# 3. 이미지 태그를 .env 에 운영 레지스트리 경로로 지정.
+# 2. 운영 .env 는 /appdata/app/vision-infra/.env 에 chmod 600 으로 배치
+#    (REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD,
+#     각 *_TAG 핀 포함).
+# 3. 레지스트리 로그인 (1회):
+#       docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
 
 cd compose
+docker compose --env-file /appdata/app/vision-infra/.env \
+  -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose --env-file /appdata/app/vision-infra/.env \
   -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
@@ -127,6 +179,15 @@ docker compose --env-file /appdata/app/vision-infra/.env \
 이 레포의 `reusable-build-push.yml` 을 호출하기만 하면 됩니다.
 이미지 빌드 → 레지스트리 푸시 → 매니페스트 태깅이 한 곳에서 관리되어
 파이프라인 드리프트가 발생하지 않습니다.
+
+GitHub 설정 (조직 레벨 권장 — 두 앱 레포 공유):
+
+- **vars**: `REGISTRY_URL`, `IMAGE_PREFIX` (+ 선택: `NODE_TAG`,
+  `PYTHON_TAG`, `FFMPEG_TAG`)
+- **secrets**: `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`
+
+`reusable-build-push.yml` 이 push 단계에서 `vars.REGISTRY_URL`/`IMAGE_PREFIX`
+가 비어있으면 즉시 실패하므로 설정 누락이 무음으로 흘러가지 않습니다.
 
 ## 향후 확장 (K8s 등)
 
