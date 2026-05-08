@@ -143,13 +143,13 @@ docker compose --env-file ../.env \
 ```
 
 폐쇄망(에어갭) 빌드:
-- vision (npm) 은 Dockerfile ARG 기본값이 사내 Samsung Nexus 를 가리키므로
-  별도 설정 없이 빌드됩니다. 외부망에서 빌드하려면 `.env` 에
-  `NPM_REGISTRY=` / `NPM_PROXY=` / `NPM_HTTPS_PROXY=` / `NPM_STRICT_SSL=` 를
-  빈 값으로 명시해 공개 npm 으로 폴백시키세요.
-- videonizer (pip) 도 동일 — `PIP_INDEX_URL=` / `PIP_EXTRA_INDEX_URL=` /
-  `PIP_TRUSTED_HOST=` 를 빈 값으로 명시.
-- 다른 사설 미러를 가리키려면 `.env` 에 명시적 URL 로 교체.
+- 기본값은 **공용** 입니다 — 외부망 / 공용 인터넷 CI 러너에서는 `.env` 에
+  추가 설정이 필요 없습니다 (npm/pip 가 공용 레지스트리로 폴백).
+- 사내 Samsung Nexus 같은 폐쇄망 미러를 써야 하면 `.env.example` 의
+  `NPM_*` (vision) / `PIP_*` (videonizer) 주석 줄을 해제하세요. compose 가
+  `.env` 를 읽어 vision / videonizer 빌드에 build args 로 흘려줍니다.
+- 다른 사설 미러를 가리키려면 같은 줄을 명시적 URL 로 교체.
+- `--build-arg` 를 손으로 타이핑할 필요 없습니다 — `.env` 만 만지면 됨.
 
 기동 확인:
 
