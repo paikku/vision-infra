@@ -20,6 +20,22 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
         └─→ minio:9000 (오브젝트 스토리지)
 ```
 
+## 운영 모드
+
+세 가지 모드 중 하나를 골라서 띄우면 됩니다. 각 모드는 자기 레포의 `.env`
+하나만 보고 동작합니다.
+
+| 모드 | 시작 위치 / 명령 | 필요한 .env |
+|---|---|---|
+| A. vision 단독 | `cd vision && npm run dev` 또는 `docker run --env-file .env vision` | `vision/.env` (전부 비워도 부팅, UI 만 동작) |
+| B. videonizer 단독 | `cd videonizer && docker compose up -d --build` | `videonizer/.env` (REGISTRY_URL/IMAGE_PREFIX 외 비워도 부팅) |
+| C. 통합 스택 (이 레포) | `cd vision-infra/compose && docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.{dev,prod}.yml up -d` | `vision-infra/.env` (단일 소스) |
+
+통합 모드(C)에서는 sub-repo 의 `.env` 가 사용되지 않습니다 — 이 레포의 `.env`
+가 모든 서비스 환경변수를 책임집니다. `.env` 가 비어 있어도 `REGISTRY_URL` /
+`IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `ALLOWED_ORIGINS` 미설정
+시 videonizer 코드 기본값 `*` 가 적용되어 외부망에서도 동작합니다.
+
 ## 어디서 뭘 바꾸나 (cheat sheet)
 
 `vision-infra` 는 **배포 토폴로지** 만 책임집니다. 코드와 스키마는 앱 레포 소유.
