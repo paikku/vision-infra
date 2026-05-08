@@ -32,8 +32,8 @@ services:
       context: ../../videonizer
       dockerfile: Dockerfile
       args:
-        REGISTRY_URL: ${REGISTRY_URL}
-        IMAGE_PREFIX: ${IMAGE_PREFIX}
+        REGISTRY_URL: ${REGISTRY_URL:?set REGISTRY_URL in .env}
+        IMAGE_PREFIX: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}
         FFMPEG_TAG: ${FFMPEG_TAG:-7.1-ubuntu}
         PYTHON_TAG: ${PYTHON_TAG:-3.12-slim}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
@@ -45,8 +45,8 @@ services:
       context: ../../videonizer
       dockerfile: Dockerfile
       args:
-        REGISTRY_URL: ${REGISTRY_URL}
-        IMAGE_PREFIX: ${IMAGE_PREFIX}
+        REGISTRY_URL: ${REGISTRY_URL:?set REGISTRY_URL in .env}
+        IMAGE_PREFIX: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}
         FFMPEG_TAG: ${FFMPEG_TAG:-7.1-ubuntu}
         PYTHON_TAG: ${PYTHON_TAG:-3.12-slim}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
@@ -67,10 +67,23 @@ services:
       dockerfile: Dockerfile
       target: dev
       args:
-        REGISTRY_URL: ${REGISTRY_URL}
-        IMAGE_PREFIX: ${IMAGE_PREFIX}
+        REGISTRY_URL: ${REGISTRY_URL:?set REGISTRY_URL in .env}
+        IMAGE_PREFIX: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}
         NODE_TAG: ${NODE_TAG:-21-alpine}
+        # npm mirror / proxy / strict-ssl. Compose always passes these as
+        # build args (empty by default), mirroring the videonizer PIP_*
+        # pattern. Direct `docker build` (CI) inherits the Dockerfile
+        # defaults — internal Samsung Nexus. Set in .env to override.
         NPM_REGISTRY: ${NPM_REGISTRY:-}
+        NPM_PROXY: ${NPM_PROXY:-}
+        NPM_HTTPS_PROXY: ${NPM_HTTPS_PROXY:-}
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-}
+        # NEXT_PUBLIC_* are inlined by `next build` into the client bundle, so
+        # split-domain deployments must override at build time. Default empty
+        # — vision uses same-origin relative paths via the edge nginx.
+        NEXT_PUBLIC_VIDEONIZER_URL: ${NEXT_PUBLIC_VIDEONIZER_URL:-}
+        NEXT_PUBLIC_VIDEO_SEGMENT_ENDPOINT: ${NEXT_PUBLIC_VIDEO_SEGMENT_ENDPOINT:-}
+        NEXT_PUBLIC_VIDEO_NORMALIZE_ENDPOINT: ${NEXT_PUBLIC_VIDEO_NORMALIZE_ENDPOINT:-}
     environment:
       WATCHPACK_POLLING: "true"
     volumes:

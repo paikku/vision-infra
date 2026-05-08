@@ -5,7 +5,9 @@
 #
 # All `image:` refs are derived from a single private registry path:
 #   ${REGISTRY_URL}/${IMAGE_PREFIX}/<name>:<tag>
-# REGISTRY_URL and IMAGE_PREFIX MUST be set in `.env` (see .env.example).
+# REGISTRY_URL and IMAGE_PREFIX MUST be set in `.env`. The `:?` guard on
+# each `image:` line below produces a clear error if either is empty —
+# no safe public default exists under the airgap policy.
 # Per-image tag overrides (POSTGRES_TAG, MINIO_TAG, NGINX_TAG, PYTHON_TAG,
 # VISION_TAG, VIDEONIZER_TAG) let you pin specific versions without
 # changing this file.
@@ -25,7 +27,7 @@ volumes:
 
 services:
   postgres:
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/postgres:${POSTGRES_TAG:-16-alpine}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/postgres:${POSTGRES_TAG:-16-alpine}
     networks: [vision_net]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-videonizer}
@@ -43,7 +45,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/minio:${MINIO_TAG:-latest}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/minio:${MINIO_TAG:-latest}
     networks: [vision_net]
     command: server /data --console-address ":9001"
     environment:
@@ -60,21 +62,38 @@ services:
     restart: unless-stopped
 
   videonizer-migrate:
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/videonizer:${VIDEONIZER_TAG:-dev}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/videonizer:${VIDEONIZER_TAG:-dev}
     networks: [vision_net]
     command: ["alembic", "upgrade", "head"]
+    # `environment:` defaults guarantee a working stack even with an empty
+    # .env. The matching POSTGRES_* defaults wire to the embedded postgres
+    # service. Operator-provided .env (env_file below) overrides these.
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-videonizer}:${POSTGRES_PASSWORD:-videonizer}@postgres:5432/${POSTGRES_DB:-videonizer}}
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   videonizer:
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/videonizer:${VIDEONIZER_TAG:-dev}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/videonizer:${VIDEONIZER_TAG:-dev}
     networks: [vision_net]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-videonizer}:${POSTGRES_PASSWORD:-videonizer}@postgres:5432/${POSTGRES_DB:-videonizer}}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}
+      MINIO_BUCKET: ${MINIO_BUCKET:-videonizer}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     env_file:
-      - ../.env
+      - path: ../.env
+        required: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,7 +114,7 @@ services:
     restart: unless-stopped
 
   vision:
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/vision:${VISION_TAG:-dev}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/vision:${VISION_TAG:-dev}
     networks: [vision_net]
     depends_on:
       videonizer:
@@ -112,7 +131,7 @@ services:
     # python ships openssl out of the box — picked because the bootstrap
     # must work in air-gapped environments where `apk add` / `apt-get
     # install` would fail.
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/python:${PYTHON_TAG:-3.12-slim}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/python:${PYTHON_TAG:-3.12-slim}
     volumes:
       - ../nginx/certs:/certs
       - ../nginx/cert-init.sh:/cert-init.sh:ro
@@ -120,7 +139,7 @@ services:
     restart: "no"
 
   nginx:
-    image: ${REGISTRY_URL}/${IMAGE_PREFIX}/nginx:${NGINX_TAG:-1.27-alpine}
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/nginx:${NGINX_TAG:-1.27-alpine}
     networks: [vision_net]
     ports:
       - "${EDGE_HTTP_PORT:-80}:80"
