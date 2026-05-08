@@ -127,9 +127,11 @@ parent/
 ## 로컬 dev 실행
 
 ```bash
-# 1. 환경변수 준비 (compose/ 가 .env 를 읽음)
+# 1. 환경변수 준비 (compose/ 가 ../.env 를 읽음)
 cp .env.example .env
-# .env 에 REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 채우기
+# 최소: REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 만 채워도 부팅됨.
+# 나머지(DATABASE_URL, MINIO_*, ALLOWED_ORIGINS 등)는 빈 값일 때 compose 의
+# ${VAR:-default} 와 코드 기본값(ALLOWED_ORIGINS=*) 으로 자동 채워짐.
 
 # 2. 레지스트리 로그인 (1회 — ~/.docker/config.json 에 캐싱됨)
 docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
@@ -139,6 +141,15 @@ cd compose
 docker compose --env-file ../.env \
   -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
+
+폐쇄망(에어갭) 빌드:
+- vision (npm) 은 Dockerfile ARG 기본값이 사내 Samsung Nexus 를 가리키므로
+  별도 설정 없이 빌드됩니다. 외부망에서 빌드하려면 `.env` 에
+  `NPM_REGISTRY=` / `NPM_PROXY=` / `NPM_HTTPS_PROXY=` / `NPM_STRICT_SSL=` 를
+  빈 값으로 명시해 공개 npm 으로 폴백시키세요.
+- videonizer (pip) 도 동일 — `PIP_INDEX_URL=` / `PIP_EXTRA_INDEX_URL=` /
+  `PIP_TRUSTED_HOST=` 를 빈 값으로 명시.
+- 다른 사설 미러를 가리키려면 `.env` 에 명시적 URL 로 교체.
 
 기동 확인:
 
