@@ -174,12 +174,13 @@ raw `docker build` 가 꼭 필요하면 `.env` 를 셸로 export 하고 build ar
 명시해야 합니다 (compose 와 달리 `docker build` 는 `.env` 를 안 읽음):
 
 ```bash
-set -a && . vision-infra/.env && set +a
+# 같은 기준 (vision-infra 안) 에서 실행. vision 은 sibling 레포라 ../vision.
+set -a && . .env && set +a
 docker build \
   --build-arg REGISTRY_URL \
   --build-arg IMAGE_PREFIX \
   --build-arg NODE_TAG \
-  -t vision:dev vision/
+  -t vision:dev ../vision
 ```
 
 ## 운영 배포 (khavipw01)
