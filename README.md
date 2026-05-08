@@ -33,8 +33,10 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 
 통합 모드(C)에서는 sub-repo 의 `.env` 가 사용되지 않습니다 — 이 레포의 `.env`
 가 모든 서비스 환경변수를 책임집니다. `.env` 가 비어 있어도 `REGISTRY_URL` /
-`IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `ALLOWED_ORIGINS` 미설정
-시 videonizer 코드 기본값 `*` 가 적용되어 외부망에서도 동작합니다.
+`IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `ALLOWED_ORIGINS` 의
+`.env.example` 기본값은 localhost 호스트 origin (엣지 nginx + 직접 :8000 호출)
+입니다 — 외부망에서 임의 origin 으로 접근시키려면 `.env` 의 해당 줄을 지우면
+videonizer 코드 기본값 `*` 가 적용됩니다.
 
 ## 어디서 뭘 바꾸나 (cheat sheet)
 
@@ -131,7 +133,8 @@ parent/
 cp .env.example .env
 # 최소: REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 만 채워도 부팅됨.
 # 나머지(DATABASE_URL, MINIO_*, ALLOWED_ORIGINS 등)는 빈 값일 때 compose 의
-# ${VAR:-default} 와 코드 기본값(ALLOWED_ORIGINS=*) 으로 자동 채워짐.
+# ${VAR:-default} 또는 코드 기본값(ALLOWED_ORIGINS=*)으로 자동 채워짐.
+# .env.example 자체에는 localhost dev 친화 기본값들이 박혀 있음.
 
 # 2. 레지스트리 로그인 (1회 — ~/.docker/config.json 에 캐싱됨)
 docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
