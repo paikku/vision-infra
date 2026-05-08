@@ -116,6 +116,18 @@ services:
   vision:
     image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/vision:${VISION_TAG:-dev}
     networks: [vision_net]
+    # Backend URLs are read at runtime from the container env by the
+    # Next.js root layout and re-emitted as `window.__ENV`. Empty
+    # values mean "same origin" — the SPA calls relative paths and the
+    # edge nginx below routes /v1/* to videonizer. Override only for
+    # split-domain deployments (api.example.com etc).
+    environment:
+      VIDEONIZER_URL: ${VIDEONIZER_URL:-}
+      VIDEO_NORMALIZE_ENDPOINT: ${VIDEO_NORMALIZE_ENDPOINT:-}
+      IMAGE_SEGMENT_ENDPOINT: ${IMAGE_SEGMENT_ENDPOINT:-}
+    env_file:
+      - path: ./.env
+        required: false
     depends_on:
       videonizer:
         condition: service_healthy

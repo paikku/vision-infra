@@ -78,12 +78,11 @@ services:
         NPM_PROXY: ${NPM_PROXY:-}
         NPM_HTTPS_PROXY: ${NPM_HTTPS_PROXY:-}
         NPM_STRICT_SSL: ${NPM_STRICT_SSL:-}
-        # NEXT_PUBLIC_* are inlined by `next build` into the client bundle, so
-        # split-domain deployments must override at build time. Default empty
-        # — vision uses same-origin relative paths via the edge nginx.
-        NEXT_PUBLIC_VIDEONIZER_URL: ${NEXT_PUBLIC_VIDEONIZER_URL:-}
-        NEXT_PUBLIC_VIDEO_SEGMENT_ENDPOINT: ${NEXT_PUBLIC_VIDEO_SEGMENT_ENDPOINT:-}
-        NEXT_PUBLIC_VIDEO_NORMALIZE_ENDPOINT: ${NEXT_PUBLIC_VIDEO_NORMALIZE_ENDPOINT:-}
+        # Backend URLs (VIDEONIZER_URL / VIDEO_NORMALIZE_ENDPOINT /
+        # IMAGE_SEGMENT_ENDPOINT) are NOT build args anymore — they are
+        # read at runtime from the container env by the root layout and
+        # re-emitted as window.__ENV. See the base compose's vision
+        # `environment:` block.
     environment:
       WATCHPACK_POLLING: "true"
     volumes:
