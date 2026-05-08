@@ -70,7 +70,14 @@ services:
         REGISTRY_URL: ${REGISTRY_URL:?set REGISTRY_URL in .env}
         IMAGE_PREFIX: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}
         NODE_TAG: ${NODE_TAG:-21-alpine}
+        # npm mirror / proxy / strict-ssl. Compose always passes these as
+        # build args (empty by default), mirroring the videonizer PIP_*
+        # pattern. Direct `docker build` (CI) inherits the Dockerfile
+        # defaults — internal Samsung Nexus. Set in .env to override.
         NPM_REGISTRY: ${NPM_REGISTRY:-}
+        NPM_PROXY: ${NPM_PROXY:-}
+        NPM_HTTPS_PROXY: ${NPM_HTTPS_PROXY:-}
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-}
         # NEXT_PUBLIC_* are inlined by `next build` into the client bundle, so
         # split-domain deployments must override at build time. Default empty
         # — vision uses same-origin relative paths via the edge nginx.
