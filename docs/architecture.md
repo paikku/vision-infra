@@ -54,7 +54,7 @@ applies — put a reverse proxy (nginx, Caddy, ALB) in front of port
 - **`videonizer/.env`** — app-owned (DATABASE_URL, MINIO_*, app
   knobs). In the stack, the operator's `.env` mirrors these values so
   both `videonizer-migrate` and `videonizer` get a consistent
-  configuration via `env_file: ../.env`.
+  configuration via `env_file: ./.env`.
 - **`vision/.env`** — *build-time only* (`NEXT_PUBLIC_*` get inlined
   at `npm run build`). For the same-origin reverse-proxy deployment
   the build leaves `NEXT_PUBLIC_VIDEONIZER_URL` empty so the bundle
@@ -79,7 +79,7 @@ edge nginx becomes an `Ingress`. Concrete mapping:
 | `services.<x>.networks: [vision_net]` (DNS by name)      | `Service` (ClusterIP) — DNS by service name     |
 | `services.<x>.ports: ["80:80"]` (only on `nginx`)        | `Ingress` (or `Service` of type `LoadBalancer`) |
 | `services.<x>.volumes: [pgdata:/var/lib/postgresql/data]` | `PersistentVolumeClaim` + `volumeMounts`        |
-| `env_file: ../.env`                                      | `ConfigMap` (non-secrets) + `Secret` (secrets)  |
+| `env_file: ./.env`                                       | `ConfigMap` (non-secrets) + `Secret` (secrets)  |
 | `healthcheck:`                                           | `readinessProbe` + `livenessProbe`              |
 | `depends_on: { condition: service_healthy }`             | initContainer or app-level retry                |
 | `depends_on: { condition: service_completed_successfully }` (migrate) | `Job` + `initContainer` waiting for it          |

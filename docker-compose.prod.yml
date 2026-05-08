@@ -3,7 +3,7 @@
 # project state in one tree, applies resource limits matched to the
 # khavipw01 host (16 vCPU / 31Gi RAM).
 #
-# Usage (from compose/):
+# Usage (from repo root):
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # Pre-flight (one-time, run as appuser, UID/GID 1000):

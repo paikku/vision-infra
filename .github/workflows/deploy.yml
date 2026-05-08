@@ -30,7 +30,6 @@ jobs:
         run: |
           : "${REGISTRY_URL:?vars.REGISTRY_URL must be set}"
           : "${IMAGE_PREFIX:?vars.IMAGE_PREFIX must be set}"
-          cd compose
           docker compose \
             -f docker-compose.yml \
             -f docker-compose.prod.yml \
