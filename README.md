@@ -127,11 +127,9 @@ parent/
 ## 로컬 dev 실행
 
 ```bash
-# 1. 환경변수 준비 (compose/ 가 ../.env 를 읽음)
+# 1. 환경변수 준비 (compose/ 가 .env 를 읽음)
 cp .env.example .env
-# 최소: REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 만 채워도 부팅됨.
-# 나머지(DATABASE_URL, MINIO_*, ALLOWED_ORIGINS 등)는 빈 값일 때 compose 의
-# ${VAR:-default} 와 코드 기본값(ALLOWED_ORIGINS=*) 으로 자동 채워짐.
+# .env 에 REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 채우기
 
 # 2. 레지스트리 로그인 (1회 — ~/.docker/config.json 에 캐싱됨)
 docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
@@ -141,15 +139,6 @@ cd compose
 docker compose --env-file ../.env \
   -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
-
-폐쇄망(에어갭) 빌드:
-- 기본값은 **공용** 입니다 — 외부망 / 공용 인터넷 CI 러너에서는 `.env` 에
-  추가 설정이 필요 없습니다 (npm/pip 가 공용 레지스트리로 폴백).
-- 사내 Samsung Nexus 같은 폐쇄망 미러를 써야 하면 `.env.example` 의
-  `NPM_*` (vision) / `PIP_*` (videonizer) 주석 줄을 해제하세요. compose 가
-  `.env` 를 읽어 vision / videonizer 빌드에 build args 로 흘려줍니다.
-- 다른 사설 미러를 가리키려면 같은 줄을 명시적 URL 로 교체.
-- `--build-arg` 를 손으로 타이핑할 필요 없습니다 — `.env` 만 만지면 됨.
 
 기동 확인:
 
