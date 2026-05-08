@@ -71,7 +71,6 @@ Read `README.md` (operator-facing, Korean) and `docs/architecture.md`
 ## Verification before commit
 
 ```bash
-cd compose
 # Validate base + dev override merges cleanly.
 docker compose -f docker-compose.yml -f docker-compose.dev.yml config >/dev/null
 # Validate base + prod override merges cleanly.

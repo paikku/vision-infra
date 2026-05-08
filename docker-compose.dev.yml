@@ -4,10 +4,10 @@
 #
 # Hot reload:
 #   - vision     → builds the Dockerfile `dev` target (`next dev` / HMR);
-#                  ../../vision is bind-mounted onto /app, with anonymous
+#                  ../vision is bind-mounted onto /app, with anonymous
 #                  volumes guarding /app/node_modules and /app/.next so
 #                  the host doesn't shadow container state.
-#   - videonizer → uvicorn `--reload` (UVICORN_RELOAD=1); ../../videonizer/app
+#   - videonizer → uvicorn `--reload` (UVICORN_RELOAD=1); ../videonizer/app
 #                  bind-mounted onto /srv/app.
 #   - videonizer-migrate runs once and exits — no reload needed.
 #
@@ -17,7 +17,7 @@
 # (NODE_TAG / FFMPEG_TAG / PYTHON_TAG) inherit defaults from the
 # Dockerfile when unset.
 #
-# Usage (from compose/):
+# Usage (from repo root):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 #
 # Assumes the layout:
@@ -29,7 +29,7 @@
 services:
   videonizer-migrate:
     build:
-      context: ../../videonizer
+      context: ../videonizer
       dockerfile: Dockerfile
       args:
         REGISTRY_URL: ${REGISTRY_URL:?set REGISTRY_URL in .env}
@@ -42,7 +42,7 @@ services:
 
   videonizer:
     build:
-      context: ../../videonizer
+      context: ../videonizer
       dockerfile: Dockerfile
       args:
         REGISTRY_URL: ${REGISTRY_URL:?set REGISTRY_URL in .env}
@@ -56,14 +56,14 @@ services:
       UVICORN_RELOAD: "1"
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
-      - ../../videonizer/app:/srv/app
+      - ../videonizer/app:/srv/app
     ports:
       # Direct access for `curl localhost:8000/healthz` and similar.
       - "8000:8000"
 
   vision:
     build:
-      context: ../../vision
+      context: ../vision
       dockerfile: Dockerfile
       target: dev
       args:
@@ -87,7 +87,7 @@ services:
     environment:
       WATCHPACK_POLLING: "true"
     volumes:
-      - ../../vision:/app
+      - ../vision:/app
       # Anonymous volumes preserve container-side state from being shadowed
       # by the host bind mount above. Without these, the host's empty (or
       # mismatched) node_modules/.next would replace what was baked into

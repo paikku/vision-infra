@@ -29,7 +29,7 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 |---|---|---|
 | A. vision 단독 | `cd vision && npm run dev` 또는 `docker run --env-file .env vision` | `vision/.env` (전부 비워도 부팅, UI 만 동작) |
 | B. videonizer 단독 | `cd videonizer && docker compose up -d --build` | `videonizer/.env` (REGISTRY_URL/IMAGE_PREFIX 외 비워도 부팅) |
-| C. 통합 스택 (이 레포) | `cd vision-infra/compose && docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.{dev,prod}.yml up -d` | `vision-infra/.env` (단일 소스) |
+| C. 통합 스택 (이 레포) | `cd vision-infra && docker compose -f docker-compose.yml -f docker-compose.{dev,prod}.yml up -d` | `vision-infra/.env` (단일 소스) |
 
 통합 모드(C)에서는 sub-repo 의 `.env` 가 사용되지 않습니다 — 이 레포의 `.env`
 가 모든 서비스 환경변수를 책임집니다. `.env` 가 비어 있어도 `REGISTRY_URL` /
@@ -50,8 +50,8 @@ videonizer 코드 기본값 `*` 가 적용됩니다.
 | 모델 가중치, ffmpeg 옵션 | `videonizer` | `weights/`, `app/normalize.py` |
 | nginx 라우팅 (`/v1` 등) | **`vision-infra`** | `nginx/conf.d/default.conf` |
 | postgres 익스텐션 (스키마 *전*) | **`vision-infra`** | `db/init/*.sql` |
-| postgres / minio 리소스 한도 | **`vision-infra`** | `compose/docker-compose.prod.yml` |
-| 서비스 의존성 / healthcheck | **`vision-infra`** | `compose/docker-compose.yml` |
+| postgres / minio 리소스 한도 | **`vision-infra`** | `docker-compose.prod.yml` |
+| 서비스 의존성 / healthcheck | **`vision-infra`** | `docker-compose.yml` |
 | 운영자 env (레지스트리, 자격증명, 태그) | **`vision-infra`** | `.env` |
 | CI 빌드 로직 (재사용) | **`vision-infra`** | `.github/workflows/reusable-build-push.yml` |
 | CI 빌드 호출 (얇은 caller) | `vision`, `videonizer` | 각자 `.github/workflows/build.yml` |
@@ -73,10 +73,9 @@ videonizer 코드 기본값 `*` 가 적용됩니다.
 ## 디렉터리 구조
 
 ```
-compose/
-  docker-compose.yml       # 베이스: 전 서비스 정의 + healthcheck + 의존성
-  docker-compose.dev.yml   # dev override: 로컬 빌드 + 포트 노출
-  docker-compose.prod.yml  # prod override: 바인드 마운트 + 리소스 제한
+docker-compose.yml         # 베이스: 전 서비스 정의 + healthcheck + 의존성
+docker-compose.dev.yml     # dev override: 로컬 빌드 + 포트 노출
+docker-compose.prod.yml    # prod override: 바인드 마운트 + 리소스 제한
 nginx/
   nginx.conf               # 글로벌 nginx 설정
   conf.d/default.conf      # 라우팅 규칙 (/v1 → videonizer, / → vision)
@@ -129,7 +128,7 @@ parent/
 ## 로컬 dev 실행
 
 ```bash
-# 1. 환경변수 준비 (compose/ 가 ../.env 를 읽음)
+# 1. 환경변수 준비 (레포 루트의 .env 가 단일 소스 — compose 가 자동 로드)
 cp .env.example .env
 # 최소: REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD 만 채워도 부팅됨.
 # 나머지(DATABASE_URL, MINIO_*, ALLOWED_ORIGINS 등)는 빈 값일 때 compose 의
@@ -140,9 +139,7 @@ cp .env.example .env
 docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
 
 # 3. 스택 기동 (베이스 이미지는 pull, 앱 이미지는 sibling 레포에서 빌드)
-cd compose
-docker compose --env-file ../.env \
-  -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 폐쇄망(에어갭) 빌드:
@@ -169,9 +166,8 @@ docker compose ps                            # 모든 서비스 healthy 인지
 편합니다:
 
 ```bash
-cd vision-infra/compose
-docker compose --env-file ../.env \
-  -f docker-compose.yml -f docker-compose.dev.yml build vision
+cd vision-infra
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build vision
 ```
 
 raw `docker build` 가 꼭 필요하면 `.env` 를 셸로 export 하고 build args 를
@@ -196,7 +192,7 @@ docker build \
 # 3. 레지스트리 로그인 (1회):
 #       docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
 
-cd compose
+cd /appdata/app/vision-infra
 docker compose --env-file /appdata/app/vision-infra/.env \
   -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose --env-file /appdata/app/vision-infra/.env \
