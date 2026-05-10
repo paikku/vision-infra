@@ -10,7 +10,7 @@ shape, volume layout, or network topology.
 
 | Service              | Image                      | Listens | Persistence                                | Notes                                                             |
 | -------------------- | -------------------------- | ------- | ------------------------------------------ | ----------------------------------------------------------------- |
-| `nginx` (edge)       | `nginx:1.27-alpine`        | 80, 443 | `nginx/certs/` (read-only mount)           | Only service binding host ports. Routes to `vision`, `videonizer`. |
+| `nginx` (edge)       | `nginx:1.27-alpine`        | 80, 443 | `nginx/certs/` (read-only mount)           | Only service binding host ports. Routes to `vision`, `videonizer`. Terminates TLS; :80 redirects to :443 except `/edge-healthz`. |
 | `vision`             | `vision:dev` (or registry) | 3000    | none                                       | Single-process Next.js standalone (`node server.js`). No nginx in the image. |
 | `videonizer`         | `videonizer:dev`           | 8000    | `/srv/tmp` (job scratch, prod bind-mount)  | FastAPI app. Healthcheck on `/healthz`.                           |
 | `videonizer-migrate` | `videonizer:dev`           | none    | none                                       | One-shot `alembic upgrade head` runs before `videonizer` starts. |
@@ -19,21 +19,35 @@ shape, volume layout, or network topology.
 
 ## Routing contract (edge nginx)
 
-`vision` calls `videonizer` via relative paths when
-`NEXT_PUBLIC_VIDEONIZER_URL` is empty (the same-origin reverse-proxy
-pattern, documented in `vision/.env.example`). Edge nginx has to honor
-that contract:
+Edge nginx terminates TLS and routes by path on a single shared origin
+so the `access_token` cookie installed by `/v1/auth/callback` is
+visible to every later request — vision's middleware, vision's
+`AuthProvider`, and every videonizer endpoint all see the same cookie
+on the same host.
 
-| Path           | Upstream                |
-| -------------- | ----------------------- |
-| `/v1/*`        | `videonizer:8000`       |
-| `/healthz`     | `videonizer:8000`       |
-| `/edge-healthz` | nginx itself (200)     |
-| everything else | `vision:3000`          |
+| Listener  | Path             | Behavior                                            |
+| --------- | ---------------- | --------------------------------------------------- |
+| `:80`     | `/edge-healthz`  | 200 (Docker probe — independent of upstreams)       |
+| `:80`     | everything else  | 301 → `https://$host$request_uri`                   |
+| `:443`    | `/edge-healthz`  | 200 (HTTPS probe)                                   |
+| `:443`    | `/v1/*`          | `videonizer:8000` (includes `/v1/auth/*`)           |
+| `:443`    | `/healthz`       | `videonizer:8000`                                   |
+| `:443`    | everything else  | `vision:3000`                                       |
 
-The `/edge-healthz` endpoint is intentionally local — Docker can probe
-nginx without depending on upstream readiness, which avoids start-up
-deadlocks.
+The :443 server adds `Strict-Transport-Security: max-age=31536000;
+includeSubDomains`. Browsers latch onto HTTPS for a year after a
+single successful response — test ramp-downs need a fresh profile or
+a different host.
+
+Cookies and `Set-Cookie` are explicitly forwarded both ways so the
+session cookie set by `/v1/auth/callback` reaches the browser and
+every later request carries it back to videonizer.
+
+For air-gapped or pre-TLS test deployments where real certs aren't
+available, the `cert-init.sh` bootstrap generates a self-signed pair
+on first start so the :443 listener still responds. Real certs
+mounted at `nginx/certs/{fullchain,privkey}.pem` are detected by the
+`[ -s "$CRT" ]` guard and the bootstrap becomes a no-op.
 
 ## Why there's only one nginx in the stack
 
@@ -47,18 +61,44 @@ For a standalone vision deployment without `vision-infra`, the same
 applies — put a reverse proxy (nginx, Caddy, ALB) in front of port
 3000. Don't add nginx back into the image.
 
+## Auth & session boundary
+
+Auth lives entirely in videonizer (`/v1/auth/*`); vision reads
+session state via `GET /v1/auth/me` and renders accordingly. The
+edge nginx is the seam that makes the boundary practical:
+
+- vision and videonizer share one origin behind the edge → the
+  `access_token` cookie set by `/v1/auth/callback` is sent on every
+  later `/v1/*` request automatically (browser default).
+- vision's `middleware.ts` (Edge runtime) checks for the cookie's
+  *presence* before serving `/projects/*` when
+  `VISION_REQUIRE_AUTH=true`. Cryptographic validation stays in
+  videonizer — the edge runtime would otherwise need a JWT library
+  and the signing key, doubling the secret-distribution surface.
+- A forged cookie still passes the middleware presence check but
+  every `/v1/*` call still validates the JWT, so the worst case is
+  the SPA loading once and immediately seeing 401s.
+
+The `AUTH_COOKIE_SECURE` flag must follow the listener: `true`
+behind HTTPS (this stack's edge), `false` for plain-HTTP local dev
+where each service is hit on its own port. Cookie domain stays
+empty for same-origin deployments and switches to `.your-domain`
+only when vision and videonizer are split across sub-domains.
+
 ## env var ownership
 
 - **`vision-infra/.env`** — operator-owned. POSTGRES_*, MINIO_ROOT_*,
-  image tags, edge port overrides. Source of truth for the stack.
+  AUTH_* (SSO + cookie attributes), image tags, edge port overrides.
+  Source of truth for the stack.
 - **`videonizer/.env`** — app-owned (DATABASE_URL, MINIO_*, app
   knobs). In the stack, the operator's `.env` mirrors these values so
   both `videonizer-migrate` and `videonizer` get a consistent
   configuration via `env_file: ./.env`.
-- **`vision/.env`** — *build-time only* (`NEXT_PUBLIC_*` get inlined
-  at `npm run build`). For the same-origin reverse-proxy deployment
-  the build leaves `NEXT_PUBLIC_VIDEONIZER_URL` empty so the bundle
-  emits relative `/v1/...` paths.
+- **`vision/.env`** — *runtime* env. Backend URLs
+  (`VIDEONIZER_URL`, etc.) and the optional `VISION_REQUIRE_AUTH`
+  middleware flag are read on container start and re-emitted as
+  `window.__ENV` by the Next.js root layout, so a config change
+  applies on restart without a rebuild.
 
 ## Future expansion: K8s migration
 
@@ -92,7 +132,9 @@ edge nginx becomes an `Ingress`. Concrete mapping:
    as a starting point — expect to rewrite, not reuse verbatim.
 2. Replace `nginx` service with an `Ingress` resource. The routing
    table in `nginx/conf.d/default.conf` translates 1:1 into Ingress
-   `pathType: Prefix` rules.
+   `pathType: Prefix` rules; HSTS and HTTPS redirect become Ingress
+   annotations (`nginx.ingress.kubernetes.io/force-ssl-redirect`,
+   `nginx.ingress.kubernetes.io/hsts`).
 3. Convert named volumes (`pgdata`, `miniodata`) to PVCs with the
    storage class your cluster uses. Bind-mount paths in the prod
    override go away — operator state lives in cluster storage.
@@ -101,9 +143,11 @@ edge nginx becomes an `Ingress`. Concrete mapping:
    completion.
 5. Split `.env` into:
    - `ConfigMap/vision-infra-env` for non-secrets (image tags,
-     bucket names, log levels, hostnames).
-   - `Secret/vision-infra-secrets` for credentials (POSTGRES_PASSWORD,
-     MINIO_ROOT_PASSWORD, MINIO_SECRET_KEY, DATABASE_URL).
+     bucket names, log levels, hostnames, `AUTH_DEV_MODE`,
+     `AUTH_COOKIE_*`).
+   - `Secret/vision-infra-secrets` for credentials
+     (POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD, MINIO_SECRET_KEY,
+     DATABASE_URL, **`AUTH_JWT_SECRET`**).
 6. Drop `restart: unless-stopped` (Deployments handle this) and
    `depends_on` (use probes + initContainers).
 7. Test the routing rules with a synthetic upstream pair before
