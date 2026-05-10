@@ -5,12 +5,13 @@
 nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 관리합니다.
 
 ```
-┌──────── nginx (edge, 80/443) ────────┐
-│                                      │
-│   /v1/*, /healthz   → videonizer:8000 │
-│   그 외             → vision:3000     │
-│                                      │
-└──────────────────────────────────────┘
+┌──────── nginx (edge, :80→301, :443 TLS) ────────┐
+│                                                 │
+│   /v1/* (auth/me/login/callback 포함), /healthz  │
+│                       → videonizer:8000          │
+│   그 외               → vision:3000              │
+│                                                 │
+└─────────────────────────────────────────────────┘
         │                    │
         ▼                    ▼
    videonizer            vision (Next.js
@@ -19,6 +20,12 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
         ├─→ postgres:5432 (메타데이터)
         └─→ minio:9000 (오브젝트 스토리지)
 ```
+
+엣지에서 TLS 종료, :80 은 `/edge-healthz` 만 남기고 전부 :443 으로 301
+redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
+`access_token` 쿠키가 단일 origin 안에서 vision/videonizer 양쪽에 보이는
+구조 — 자세한 흐름은 `docs/architecture.md` 의 "Auth & session boundary" 절
+참고.
 
 ## 운영 모드
 
@@ -36,7 +43,9 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 `IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `ALLOWED_ORIGINS` 의
 `.env.example` 기본값은 localhost 호스트 origin (엣지 nginx + 직접 :8000 호출)
 입니다 — 외부망에서 임의 origin 으로 접근시키려면 `.env` 의 해당 줄을 지우면
-videonizer 코드 기본값 `*` 가 적용됩니다.
+videonizer 코드 기본값 `*` 가 적용됩니다. (단, 세션 쿠키를 쓰는 split-domain
+운영에서는 `*` 가 무효이므로 명시적 origin CSV 가 필요 — videonizer 의
+`.env.example` 참고.)
 
 ## 어디서 뭘 바꾸나 (cheat sheet)
 
@@ -48,11 +57,13 @@ videonizer 코드 기본값 `*` 가 적용됩니다.
 | FastAPI 라우트 / 비즈니스 로직 | `videonizer` | `app/routers/`, `app/main.py` |
 | **DB 스키마 / 마이그레이션** | `videonizer` | `app/models.py` + `alembic/versions/` |
 | 모델 가중치, ffmpeg 옵션 | `videonizer` | `weights/`, `app/normalize.py` |
+| SSO IdP 메타데이터 / JWT 발급 로직 | `videonizer` | `app/routers/auth.py`, `app/auth.py` |
 | nginx 라우팅 (`/v1` 등) | **`vision-infra`** | `nginx/conf.d/default.conf` |
+| TLS 인증서 마운트 | **`vision-infra`** | `nginx/certs/{fullchain,privkey}.pem` |
 | postgres 익스텐션 (스키마 *전*) | **`vision-infra`** | `db/init/*.sql` |
 | postgres / minio 리소스 한도 | **`vision-infra`** | `docker-compose.prod.yml` |
 | 서비스 의존성 / healthcheck | **`vision-infra`** | `docker-compose.yml` |
-| 운영자 env (레지스트리, 자격증명, 태그) | **`vision-infra`** | `.env` |
+| 운영자 env (레지스트리, 자격증명, 태그, **AUTH_***) | **`vision-infra`** | `.env` |
 | CI 빌드 로직 (재사용) | **`vision-infra`** | `.github/workflows/reusable-build-push.yml` |
 | CI 빌드 호출 (얇은 caller) | `vision`, `videonizer` | 각자 `.github/workflows/build.yml` |
 
@@ -67,6 +78,10 @@ videonizer 코드 기본값 `*` 가 적용됩니다.
 - **`videonizer` 의 자체 compose 는 백엔드 단독 dev 용**. 운영에선
   `vision-infra` 가 띄움. 서비스 이름 (`postgres`, `minio`) 은 양쪽이
   같으므로 백엔드 코드는 어느 환경에서 돌아도 동일.
+- **세션 쿠키는 videonizer 책임** — vision 은 `/v1/auth/me` 를 폴링해서
+  로그인 상태를 읽기만 합니다. JWT 서명 검증을 vision 의 Edge middleware 로
+  옮기지 마세요 (서명 키 분산 문제). middleware 는 쿠키 *존재* 만 확인하고
+  실제 검증은 항상 videonizer 가 합니다.
 
 ---
 
@@ -78,12 +93,13 @@ docker-compose.dev.yml     # dev override: 로컬 빌드 + 포트 노출
 docker-compose.prod.yml    # prod override: 바인드 마운트 + 리소스 제한
 nginx/
   nginx.conf               # 글로벌 nginx 설정
-  conf.d/default.conf      # 라우팅 규칙 (/v1 → videonizer, / → vision)
+  conf.d/default.conf      # 라우팅 규칙 (:80→:443 redirect, /v1 → videonizer)
+  cert-init.sh             # 인증서 부재 시 self-signed 페어 자동 생성
   certs/                   # TLS 인증서 (.gitignore — 직접 마운트)
 db/
   init/01-init.sql         # 첫 실행 시 postgres에 적용되는 init SQL
 docs/
-  architecture.md          # 아키텍처 + 향후 확장 (K8s) 노트 (영문)
+  architecture.md          # 아키텍처 + 라우팅/auth 경계 + K8s 확장 노트 (영문)
 .github/workflows/
   reusable-build-push.yml  # 앱 레포에서 호출하는 재사용 워크플로
   deploy.yml               # 운영 배포 워크플로
@@ -154,10 +170,12 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 기동 확인:
 
 ```bash
-curl -sS http://localhost/edge-healthz       # nginx 자체
-curl -sS http://localhost/healthz            # videonizer healthz (프록시 경유)
-curl -sS http://localhost/                   # vision 프론트엔드
-docker compose ps                            # 모든 서비스 healthy 인지
+curl -sS http://localhost/edge-healthz                  # nginx 자체 (:80 헬스체크)
+curl -skS https://localhost/edge-healthz                # :443 헬스체크 (self-signed 검증 skip)
+curl -skS https://localhost/healthz                     # videonizer healthz (프록시 경유)
+curl -skS https://localhost/v1/auth/me                  # 미로그인 → {"authenticated":false,"user":null}
+curl -skS https://localhost/                            # vision 프론트엔드
+docker compose ps                                       # 모든 서비스 healthy 인지
 ```
 
 ### 단일 이미지만 빌드 / 디버깅
@@ -182,15 +200,38 @@ docker build \
   -t vision:dev vision/
 ```
 
+## 인증 / SSO (Auth)
+
+세션은 videonizer 의 `/v1/auth/*` 가 책임집니다. 모드 스위치는 단일 환경변수:
+
+| 환경변수 | 기본 | 효과 |
+|---|---|---|
+| `AUTH_DEV_MODE` | `true` | `/v1/auth/login` 이 IdP 호출 없이 즉시 `AUTH_DEV_USER_*` 로 세션 발급. 신규 dev 환경이 IdP 자격 없이도 로그인된 UI 를 띄움. |
+| `AUTH_DEV_MODE` | `false` | OIDC implicit + form_post 로 외부 IdP 호출. `AUTH_ENTITY_ID` / `AUTH_CLIENT_ID` / `AUTH_CERT_PATH` 모두 필요. |
+| `AUTH_JWT_SECRET` | `dev-only-jwt-secret-change-me` | 서비스 발급 HS256 JWT 의 서명 키. 운영 배포 전 반드시 강한 랜덤값으로 교체. |
+| `AUTH_COOKIE_SECURE` | `false` | HTTPS 엣지 뒤에서는 반드시 `true`. plain-HTTP dev 에서만 `false`. |
+| `AUTH_COOKIE_DOMAIN` | `""` | same-origin 운영은 빈 값. split-domain 이면 `.your-domain` 형태. |
+| `VISION_REQUIRE_AUTH` (vision) | `false` | `true` 이면 vision 의 Next.js middleware 가 `/projects/*` 쿠키 부재 시 `/v1/auth/login` 으로 302. |
+
+운영 배포 체크리스트:
+
+1. `AUTH_DEV_MODE=false` 로 설정했는지 확인 — 빠뜨리면 누구나 `dev_user` 로 로그인됨.
+2. `AUTH_JWT_SECRET` 이 기본값이 아닌지 확인.
+3. `nginx/certs/{fullchain,privkey}.pem` 에 실제 TLS 인증서가 있는지 확인 — 없으면 `cert-init.sh` 가 self-signed 로 폴백.
+4. `AUTH_COOKIE_SECURE=true` + `AUTH_COOKIE_DOMAIN` 가 운영 도메인과 일치하는지 확인.
+5. `curl -skS https://<host>/v1/auth/me` 가 `{"authenticated":false,...}` 를 반환하는지 확인 (auth 라우터가 살아 있는지).
+
 ## 운영 배포 (khavipw01)
 
 ```bash
 # 1. 사전 준비 (1회) — docker-compose.prod.yml 상단 주석 참고.
 # 2. 운영 .env 는 /appdata/app/vision-infra/.env 에 chmod 600 으로 배치
 #    (REGISTRY_URL, IMAGE_PREFIX, REGISTRY_USERNAME/PASSWORD,
-#     각 *_TAG 핀 포함).
+#     각 *_TAG 핀, AUTH_DEV_MODE=false + AUTH_JWT_SECRET + 나머지 AUTH_* 포함).
 # 3. 레지스트리 로그인 (1회):
 #       docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
+# 4. 실제 TLS 인증서를 /appdata/storage/vision/certs/{fullchain,privkey}.pem 에
+#    배치 — docker-compose.prod.yml 이 :ro 로 마운트.
 
 cd /appdata/app/vision-infra
 docker compose --env-file /appdata/app/vision-infra/.env \
@@ -224,7 +265,7 @@ K8s 이행은 핵심 목적은 아니지만, compose 작성 시 아래 원칙을
 expansion" 절 참고.
 
 1. 모든 볼륨은 named volume (PVC 1:1 매핑 가능)
-2. 모든 설정은 env var (ConfigMap/Secret 으로 직행)
+2. 모든 설정은 env var (ConfigMap/Secret 으로 직행 — `AUTH_JWT_SECRET` 은 Secret)
 3. 모든 서비스에 healthcheck (readiness/liveness probe 로 전환)
 4. 서비스 간 통신은 항상 서비스 이름 기반 (ClusterIP 동일 모델)
 5. host network/host port 바인딩 없음 (엣지 nginx 만 80/443 바인딩 → Ingress 로 전환)
