@@ -213,13 +213,52 @@ docker build \
 | `AUTH_COOKIE_DOMAIN` | `""` | same-origin 운영은 빈 값. split-domain 이면 `.your-domain` 형태. |
 | `VISION_REQUIRE_AUTH` (vision) | `false` | `true` 이면 vision 의 Next.js middleware 가 `/projects/*` 쿠키 부재 시 `/v1/auth/login` 으로 302. |
 
+### IdP 어드민에 등록할 값 (redirect_uri)
+
+외부 SSO 콘솔에서 등록하는 redirect_uri 는 **엣지 nginx 의 공개 URL** 입니다.
+백엔드 컨테이너의 :8000 은 도커 네트워크 내부 전용이고 IdP 에 절대 노출되지
+않습니다.
+
+| 등록 항목 | 값 (표준 HTTPS 443 운영 기준) |
+|---|---|
+| client_id | `AUTH_CLIENT_ID` 값과 일치 (예: `videonizer`) |
+| **redirect_uri (callback URL)** | `https://<운영-호스트>/v1/auth/callback` |
+| response_type | `code id_token` |
+| response_mode | `form_post` |
+| scope | `openid profile` |
+
+예) 운영 도메인이 `vision.example.com` 이면 IdP 에 등록할 redirect_uri 는
+`https://vision.example.com/v1/auth/callback` 한 줄. 표준 443 이므로 포트는
+생략합니다.
+
+요청 흐름 (포트가 누구 책임인지 한눈에):
+
+```
+브라우저 ─(1) GET https://vision.example.com/v1/auth/login (:443)──▶ nginx
+                                                                       │
+nginx ─(2) 내부 프록시 http://videonizer:8000/v1/auth/login ───────────▶ videonizer
+                                                                       │
+videonizer ─(3) X-Forwarded-Proto/Host 헤더로 redirect_uri 재구성
+              = "https://vision.example.com/v1/auth/callback"
+            ─(4) 302 → IdP, state=<원래 path> ──────────────────────────▶ 브라우저
+
+브라우저 ──────────────────────── IdP 자체 도메인:포트 (사용자 인증 화면) ─▶ IdP
+
+IdP ─(5) form-POST id_token 을 위 redirect_uri 로 ─────────────────────▶ nginx :443
+                                                                       │
+nginx ─(6) 내부 프록시 → videonizer:8000/v1/auth/callback ─────────────▶ videonizer
+                                                                       │
+videonizer ─(7) id_token 검증 → access_token 쿠키 set → 302 next ──────▶ 브라우저
+```
+
 운영 배포 체크리스트:
 
 1. `AUTH_DEV_MODE=false` 로 설정했는지 확인 — 빠뜨리면 누구나 `dev_user` 로 로그인됨.
 2. `AUTH_JWT_SECRET` 이 기본값이 아닌지 확인.
 3. `nginx/certs/{fullchain,privkey}.pem` 에 실제 TLS 인증서가 있는지 확인 — 없으면 `cert-init.sh` 가 self-signed 로 폴백.
 4. `AUTH_COOKIE_SECURE=true` + `AUTH_COOKIE_DOMAIN` 가 운영 도메인과 일치하는지 확인.
-5. `curl -skS https://<host>/v1/auth/me` 가 `{"authenticated":false,...}` 를 반환하는지 확인 (auth 라우터가 살아 있는지).
+5. IdP 어드민에 `https://<운영-호스트>/v1/auth/callback` 이 정확히 등록돼 있는지 확인 — 한 글자라도 다르면 IdP 가 callback 을 거절합니다.
+6. `curl -skS https://<host>/v1/auth/me` 가 `{"authenticated":false,...}` 를 반환하는지 확인 (auth 라우터가 살아 있는지).
 
 ## 운영 배포 (khavipw01)
 
