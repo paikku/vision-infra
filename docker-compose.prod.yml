@@ -8,7 +8,7 @@
 #
 # Pre-flight (one-time, run as appuser, UID/GID 1000):
 #
-#   mkdir -p /appdata/storage/vision/{postgres,minio,temp,certs}
+#   mkdir -p /appdata/storage/vision/{postgres,minio,temp}
 #   mkdir -p /appdata/logs/vision/{nginx,postgres,videonizer}
 #   mkdir -p /appdata/backup/vision
 #
@@ -16,8 +16,13 @@
 #   # rotated credentials (POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD /
 #   # MINIO_SECRET_KEY etc) — chmod 600.
 #
-#   # Mount real TLS certs at /appdata/storage/vision/certs/{fullchain,privkey}.pem
-#   # before starting nginx; otherwise edge serves self-signed.
+# TLS + IdP cert mounts live in the base compose (docker-compose.yml)
+# so dev and prod read from the same /appdata/certs/vip/{sso,idp} tree.
+# Operator-managed:
+#   /appdata/certs/vip/sso/fullchain.pem    (edge nginx TLS)
+#   /appdata/certs/vip/sso/privkey.pem      (edge nginx TLS)
+#   /appdata/certs/vip/idp/saml-signing.pem (videonizer SSO id_token verify)
+# Missing files / dirs make compose-up fail (no self-signed fallback).
 
 services:
   postgres:
@@ -101,8 +106,6 @@ services:
           memory: 1G
 
   nginx:
-    volumes:
-      - /appdata/storage/vision/certs:/etc/nginx/certs:ro
     deploy:
       resources:
         limits:

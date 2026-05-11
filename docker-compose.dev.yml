@@ -1,6 +1,5 @@
 # Dev override — build images from sibling app repos with hot reload,
-# expose internal ports for direct debugging, generate self-signed TLS
-# certs on first nginx start.
+# expose internal ports for direct debugging.
 #
 # Hot reload:
 #   - vision     → builds the Dockerfile `dev` target (`next dev` / HMR);
@@ -16,6 +15,11 @@
 # IMAGE_PREFIX MUST be set in `.env` even for dev builds. Tag args
 # (NODE_TAG / FFMPEG_TAG / PYTHON_TAG) inherit defaults from the
 # Dockerfile when unset.
+#
+# TLS + IdP cert mounts are inherited from the base compose — dev and
+# prod read the same /appdata/certs/vip/{sso,idp} tree and fail-fast on
+# missing files. Prepare those dirs on the dev host before `compose up`
+# (see README "사전 준비"); there is no self-signed fallback.
 #
 # Usage (from repo root):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
