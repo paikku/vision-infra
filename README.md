@@ -168,6 +168,24 @@ sudo mkdir -p /appdata/certs/vip/sso /appdata/certs/vip/idp
   인증서. `AUTH_DEV_MODE=true` (기본값) 일 때는 파일이 없어도 동작 — 디렉터리만
   존재하면 mount 통과. 운영 (`AUTH_DEV_MODE=false`) 에서는 IdP 발급 인증서를 배치.
 
+### 3) 데이터 / 로그 디렉터리 (prod 전용)
+
+`docker-compose.prod.yml` 이 호스트 경로를 그대로 바인드 마운트하고,
+postgres / minio / videonizer 컨테이너는 `user: "1000:1000"` 으로 실행됩니다.
+디렉터리를 만들고 **UID/GID 1000 소유**로 바꿔야 합니다 — 안 그러면
+postgres 가 `initdb: could not change permissions ... Operation not permitted`
+로, minio 가 `/data/.minio.sys/tmp ... file access denied` 로 죽고
+의존 컨테이너가 전부 unhealthy 로 멈춥니다.
+
+```bash
+sudo mkdir -p /appdata/storage/vision/{postgres,minio,temp}
+sudo mkdir -p /appdata/logs/vision/{nginx,postgres,videonizer}
+sudo mkdir -p /appdata/backup/vision
+
+sudo chown -R 1000:1000 /appdata/storage/vision /appdata/logs/vision
+sudo chmod 700 /appdata/storage/vision/postgres   # initdb 가 700 강제
+```
+
 ## 로컬 dev 실행
 
 ```bash
