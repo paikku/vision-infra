@@ -42,6 +42,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-videonizer}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-videonizer}
       POSTGRES_DB: ${POSTGRES_DB:-videonizer}
+      # Read-only role password consumed by db/init/02-readonly-role.sh
+      # on first-boot. Empty = init script skips the CREATE ROLE (warn
+      # log). To enable later, set the var and reinitialize pgdata.
+      VIDEONIZER_RO_PASSWORD: ${VIDEONIZER_RO_PASSWORD:-}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
