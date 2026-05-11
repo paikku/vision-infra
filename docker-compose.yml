@@ -16,6 +16,15 @@
 # DNS — DATABASE_URL=...@postgres:5432 / MINIO_ENDPOINT=minio:9000 work
 # without any host networking. This is the same model used by a K8s
 # Service: name resolution within a single namespace.
+#
+# Cert tree (operator-managed, applies to both dev and prod):
+#   /appdata/certs/vip/sso/{fullchain,privkey}.pem  → edge nginx TLS
+#   /appdata/certs/vip/idp/saml-signing.pem         → videonizer SSO id_token verify
+# All cert mounts are :ro with create_host_path:false — a missing host
+# dir fails compose-up rather than auto-creating an empty dir. There is
+# no self-signed fallback in any environment; operators (or local dev)
+# place a real cert (or generate one manually) before bringing the
+# stack up. See README "사전 준비" for the openssl one-liner.
 
 networks:
   vision_net:
@@ -91,9 +100,26 @@ services:
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # IdP signing-cert path. /v1/auth/callback opens this file via
+      # AUTH_CERT_PATH to verify id_token RS256 signatures. Matching
+      # cert mount is below.
+      AUTH_CERT_PATH: ${AUTH_CERT_PATH:-/run/secrets/idp/saml-signing.pem}
     env_file:
       - path: ./.env
         required: false
+    volumes:
+      # IdP signing cert. Long-form bind with create_host_path:false so a
+      # missing /appdata/certs/vip/idp on the host fails compose-up rather
+      # than letting docker auto-create an empty dir and 503-ing on the
+      # first /v1/auth/callback. AUTH_DEV_MODE=true (the default) does
+      # not read the cert at runtime, but the mount is still required —
+      # `sudo mkdir -p /appdata/certs/vip/idp` on the dev host is enough.
+      - type: bind
+        source: /appdata/certs/vip/idp
+        target: /run/secrets/idp
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -140,12 +166,21 @@ services:
     restart: unless-stopped
 
   nginx-cert-init:
-    # python ships openssl out of the box — picked because the bootstrap
-    # must work in air-gapped environments where `apk add` / `apt-get
-    # install` would fail.
+    # Edge TLS cert validator. With the :ro mount + create_host_path:false
+    # on /certs, the only outcomes are: (a) /appdata/certs/vip/sso missing
+    # on host → compose-up fails at bind time; (b) dir present, cert files
+    # present → script exits 0; (c) dir present, cert files missing →
+    # script logs an actionable error and exits non-zero. No self-signed
+    # fallback in any environment. Python image keeps the entrypoint
+    # minimal in airgap deployments where `apk add openssl` would fail.
     image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/python:${PYTHON_TAG:-3.12-slim}
     volumes:
-      - ./nginx/certs:/certs
+      - type: bind
+        source: /appdata/certs/vip/sso
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
       - ./nginx/cert-init.sh:/cert-init.sh:ro
     entrypoint: ["sh", "/cert-init.sh"]
     restart: "no"
@@ -159,7 +194,12 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
+      - type: bind
+        source: /appdata/certs/vip/sso
+        target: /etc/nginx/certs
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       nginx-cert-init:
         condition: service_completed_successfully

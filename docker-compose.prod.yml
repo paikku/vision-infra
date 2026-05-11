@@ -16,14 +16,13 @@
 #   # rotated credentials (POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD /
 #   # MINIO_SECRET_KEY etc) — chmod 600.
 #
-#   # TLS + IdP certs (operator-managed, separate tree from /appdata/storage):
-#   #   /appdata/certs/vip/sso/fullchain.pem    (edge nginx TLS)
-#   #   /appdata/certs/vip/sso/privkey.pem      (edge nginx TLS)
-#   #   /appdata/certs/vip/idp/saml-signing.pem (videonizer SSO id_token verify)
-#   # All three are mounted :ro below with create_host_path:false, so a
-#   # missing cert fails fast at compose-up instead of silently serving a
-#   # self-signed cert (nginx) or 503-ing on first /v1/auth/callback
-#   # (videonizer).
+# TLS + IdP cert mounts live in the base compose (docker-compose.yml)
+# so dev and prod read from the same /appdata/certs/vip/{sso,idp} tree.
+# Operator-managed:
+#   /appdata/certs/vip/sso/fullchain.pem    (edge nginx TLS)
+#   /appdata/certs/vip/sso/privkey.pem      (edge nginx TLS)
+#   /appdata/certs/vip/idp/saml-signing.pem (videonizer SSO id_token verify)
+# Missing files / dirs make compose-up fail (no self-signed fallback).
 
 services:
   postgres:
@@ -82,22 +81,9 @@ services:
       MAX_CONCURRENT_JOBS: "6"
       SEGMENT_MAX_CONCURRENT: "2"
       TEMP_DIR: "/srv/tmp"
-      # Pin the IdP signing-cert path so /v1/auth/callback can verify
-      # id_token RS256 signatures against the cert mounted just below.
-      AUTH_CERT_PATH: /run/secrets/idp/saml-signing.pem
     volumes:
       - /appdata/storage/vision/temp:/srv/tmp
       - /appdata/logs/vision/videonizer:/var/log/app
-      # IdP signing cert. Long-form bind with create_host_path:false so
-      # a missing /appdata/certs/vip/idp on the host fails compose-up
-      # rather than letting docker auto-create an empty dir and then
-      # 503-ing on the first /v1/auth/callback.
-      - type: bind
-        source: /appdata/certs/vip/idp
-        target: /run/secrets/idp
-        read_only: true
-        bind:
-          create_host_path: false
     deploy:
       resources:
         limits:
@@ -119,30 +105,7 @@ services:
           cpus: "2"
           memory: 1G
 
-  nginx-cert-init:
-    # Re-mount the prod TLS cert dir read-only. cert-init.sh's [ -s ]
-    # check short-circuits when both fullchain.pem and privkey.pem are
-    # present and non-empty (the expected prod state). If they're missing
-    # the script tries to write a self-signed pair — which fails on a :ro
-    # mount, surfacing the problem at boot instead of silently serving a
-    # self-signed cert. create_host_path:false additionally fails at
-    # mount time if the host dir itself is absent.
-    volumes:
-      - type: bind
-        source: /appdata/certs/vip/sso
-        target: /certs
-        read_only: true
-        bind:
-          create_host_path: false
-
   nginx:
-    volumes:
-      - type: bind
-        source: /appdata/certs/vip/sso
-        target: /etc/nginx/certs
-        read_only: true
-        bind:
-          create_host_path: false
     deploy:
       resources:
         limits:
