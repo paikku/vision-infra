@@ -313,6 +313,21 @@ docker compose --env-file /appdata/app/vision-infra/.env \
   -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
+## 외부 클라이언트 직접 접근 (Postgres / MinIO)
+
+운영(prod)에서는 `docker-compose.prod.yml` 이 호스트 포트 **5432
+(postgres)**, **9000 / 9001 (minio S3 API / 콘솔)** 을 `0.0.0.0` 으로
+바인드합니다. 엣지 nginx 가 앞에 끼지 않는 다이렉트 노출이므로 호스트
+방화벽에서 source-IP 화이트리스트를 반드시 적용한 뒤 사용하세요.
+
+분석 / 점검용으로는 superuser(`POSTGRES_USER`) 가 아니라 read-only
+역할 **`videonizer_ro`** 를 발급해 쓰세요. 역할은 `.env` 의
+`VIDEONIZER_RO_PASSWORD` 가 채워진 상태에서 pgdata 가 비어 있는
+첫 부팅 시 `db/init/02-readonly-role.sh` 가 자동 생성합니다.
+
+자세한 절차(방화벽 / TLS / 백업 우선 / pgdata 재초기화 절차 /
+연결 예시 / 비밀번호 로테이션)는 `docs/external-access.md` 참고.
+
 ## CI/CD
 
 앱 레포(`vision`, `videonizer`)는 `.github/workflows/build.yml` 에서

@@ -27,6 +27,12 @@
 services:
   postgres:
     user: "1000:1000"
+    # External client access (psql/DBeaver/pgAdmin). Bound to 0.0.0.0 by
+    # default — the host firewall MUST enforce a source-IP allowlist
+    # before this stack faces a routable network. See
+    # docs/external-access.md for the runbook.
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_INITDB_ARGS: "--data-checksums"
     command: >
@@ -55,6 +61,11 @@ services:
 
   minio:
     user: "1000:1000"
+    # S3 API (:9000) for external clients (mc / boto3 / aws-cli) and the
+    # web console (:9001). Same allowlist caveat as postgres above.
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     environment:
       MINIO_PROMETHEUS_AUTH_TYPE: public
     volumes:
