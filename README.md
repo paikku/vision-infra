@@ -11,7 +11,7 @@ nginx, postgres, minio, 리버스 프록시 라우팅)와 환경별 override만 
 │                       → videonizer:8000          │
 │   그 외               → vision:3000              │
 │                                                 │
-└─────────────────────────────────────────────┘
+└────────────────────────────────────────────────────┘
         │                    │
         ▼                    ▼
    videonizer            vision (Next.js
@@ -39,7 +39,7 @@ redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
 | C. 통합 스택 (이 레포) | `cd vision-infra && docker compose -f docker-compose.yml -f docker-compose.{dev,prod}.yml up -d` | `vision-infra/.env` (단일 소스) |
 
 통합 모드(C)에서는 sub-repo 의 `.env` 가 사용되지 않습니다 — 이 레포의 `.env`
-가 모든 서비스 환경변수를 책임합니다. `.env` 가 비어 있어도 `REGISTRY_URL` /
+가 모든 서비스 환경변수를 책임집니다. `.env` 가 비어 있어도 `REGISTRY_URL` /
 `IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `.env.example` 의 vision
 런타임 URL 3개(`VIDEONIZER_URL` 등)는 빈 값 = 엣지 nginx same-origin 라우팅이
 기본이므로 localhost/IP/도메인 어디로 접속해도 CORS 없이 작동합니다 —
@@ -91,6 +91,7 @@ redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
 ```
 docker-compose.yml         # 베이스: 전 서비스 정의 + healthcheck + 의존성 + cert 마운트
 docker-compose.dev.yml     # dev override: 로컬 빌드 + 포트 노출
+docker-compose.build.yml   # build override: 운영용 이미지(runner 스테이지) 빌드/푸시 전용
 docker-compose.prod.yml    # prod override: 운영 storage 바인드 마운트 + 리소스 제한
 nginx/
   nginx.conf               # 글로벌 nginx 설정
@@ -204,26 +205,52 @@ curl -skS https://localhost/                            # vision 프론트엔드
 docker compose ps                                       # 모든 서비스 healthy 인지
 ```
 
-### 단일 이미지만 빌드 / 디버깅
+### 이미지만 빌드 / 푸시 (워크플로 안 쓰고 손으로)
 
-`docker compose build` 가 `.env` 를 자동 인식하므로 raw `docker build` 보다
-편합니다:
+용도가 둘로 갈립니다 — 어느 스테이지를 빌드할지에 따라 override 가 달라요.
+
+**(a) 운영용 이미지 (prod 가 pull 해서 쓸 이미지)**
+
+vision Dockerfile 의 마지막 스테이지 (`runner`, `node server.js`) 와 videonizer 의 prod
+이미지를 빌드해서 레지스트리로 푸시. 빌드 전용 override
+(`docker-compose.build.yml`) 를 쓰면 `.env` 의 `VISION_TAG` / `VIDEONIZER_TAG` 가
+이름·태그에 자동으로 박혀서 `docker tag` 따로 안 해도 되고, prod 호스트가
+pull 하는 이름과 자동 일치합니다.
+
+```bash
+cd vision-infra
+docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
+docker compose -f docker-compose.yml -f docker-compose.build.yml build vision videonizer
+docker compose -f docker-compose.yml -f docker-compose.build.yml push  vision videonizer
+```
+
+> ⚠️ `docker-compose.dev.yml` 위에 쌓으면 안 됩니다 — dev override 가 vision 에
+> `target: dev` 를 박아서 prod 용 `runner` 가 아니라 `next dev` (HMR) 스테이지가
+> 빌드돼요. 빌드 override 는 base compose 위에만 단독으로 쌓으세요.
+
+**(b) HMR 켜진 dev 컨테이너 빌드 / 디버깅**
+
+기존 dev override 그대로 — `target: dev` 박혀서 `next dev` 가 동작하는 이미지가
+만들어집니다. 푸시하면 안 됨.
 
 ```bash
 cd vision-infra
 docker compose -f docker-compose.yml -f docker-compose.dev.yml build vision
 ```
 
-raw `docker build` 가 꿀 필요하면 `.env` 를 셰로 export 하고 build args 를
-명시해야 합니다 (compose 와 달리 `docker build` 는 `.env` 를 안 읽음):
+**raw `docker build` 폴백**
+
+compose 가 거슬리거나 한 서비스만 따로 빌드해야 할 때 `.env` 를 셰로 export 해서
+직접 빌드도 가능. compose 와 달리 `docker build` 는 `.env` 를 자동으로 안 읽으니
+인자를 명시:
 
 ```bash
 set -a && . vision-infra/.env && set +a
 docker build \
-  --build-arg REGISTRY_URL \
-  --build-arg IMAGE_PREFIX \
-  --build-arg NODE_TAG \
-  -t vision:dev vision/
+  --build-arg REGISTRY_URL --build-arg IMAGE_PREFIX --build-arg NODE_TAG \
+  -t "$REGISTRY_URL/$IMAGE_PREFIX/vision:$VISION_TAG" \
+  ../vision
+docker push "$REGISTRY_URL/$IMAGE_PREFIX/vision:$VISION_TAG"
 ```
 
 ## 인증 / SSO (Auth)
@@ -268,7 +295,7 @@ videonizer ─(3) X-Forwarded-Proto/Host 헤더로 redirect_uri 재구성
               = "https://vision.example.com/v1/auth/callback"
             ─(4) 302 → IdP, state=<원래 path> ──────────────────────▶ 브라우저
 
-브라우저 ────────────────────────── IdP 자체 도메인:포트 (사용자 인증 화면) ─▶ IdP
+브라우저 ───────────────────────── IdP 자체 도메인:포트 (사용자 인증 화면) ─▶ IdP
 
 IdP ─(5) form-POST id_token 을 위 redirect_uri 로 ─────────────────▶ nginx :443
                                                                        │
