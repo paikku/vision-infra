@@ -12,6 +12,16 @@
 #   mkdir -p /appdata/logs/vision/{nginx,postgres,videonizer}
 #   mkdir -p /appdata/backup/vision
 #
+#   # postgres / minio / videonizer below run as user "1000:1000".
+#   # If the dirs above were created with sudo (root-owned), the
+#   # container processes can't write — postgres initdb fails with
+#   # "could not change permissions ... Operation not permitted" and
+#   # minio fails with "file access denied" on /data/.minio.sys/tmp.
+#   # Make them owned by UID/GID 1000 (and 700 on pgdata — initdb
+#   # rejects looser modes).
+#   sudo chown -R 1000:1000 /appdata/storage/vision /appdata/logs/vision
+#   sudo chmod 700 /appdata/storage/vision/postgres
+#
 #   # Operator-managed .env at /appdata/app/vision-infra/.env with
 #   # rotated credentials (POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD /
 #   # MINIO_SECRET_KEY etc) — chmod 600.
