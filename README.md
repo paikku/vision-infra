@@ -40,12 +40,12 @@ redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
 
 통합 모드(C)에서는 sub-repo 의 `.env` 가 사용되지 않습니다 — 이 레포의 `.env`
 가 모든 서비스 환경변수를 책임집니다. `.env` 가 비어 있어도 `REGISTRY_URL` /
-`IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `ALLOWED_ORIGINS` 의
-`.env.example` 기본값은 localhost 호스트 origin (엣지 nginx + 직접 :8000 호출)
-입니다 — 외부망에서 임의 origin 으로 접근시키려면 `.env` 의 해당 줄을 지우면
-videonizer 코드 기본값 `*` 가 적용됩니다. (단, 세션 쿠키를 쓰는 split-domain
-운영에서는 `*` 가 무효이므로 명시적 origin CSV 가 필요 — videonizer 의
-`.env.example` 참고.)
+`IMAGE_PREFIX` 만 채우면 합리적 기본값으로 부팅하며, `.env.example` 의 vision
+런타임 URL 3개(`VIDEONIZER_URL` 등)는 빈 값 = 엣지 nginx same-origin 라우팅이
+기본이므로 localhost/IP/도메인 어디로 접속해도 CORS 없이 작동합니다 —
+`ALLOWED_ORIGINS` 는 split-domain 운영이거나 dev override 가 :8000 으로 직접
+호출될 때만 의미가 있습니다. (세션 쿠키를 쓰는 split-domain 운영에서는 `*` 가
+무효이므로 명시적 origin CSV 가 필요 — videonizer 의 `.env.example` 참고.)
 
 ## 어디서 뭘 바꾸나 (cheat sheet)
 
