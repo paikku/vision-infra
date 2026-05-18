@@ -6,11 +6,25 @@
 # Usage (from repo root):
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# Pre-flight (one-time, run as appuser, UID/GID 1000):
+# Pre-flight (one-time). The bind-mounted host directories MUST be
+# owned by UID/GID 1000 — postgres, minio, videonizer all run as
+# `user: "1000:1000"` and write into these mounts. A plain `mkdir -p`
+# leaves root ownership and breaks boot (e.g. videonizer fails with
+# EACCES on /srv/tmp). Use `install -d` so owner/mode are set in one
+# step:
 #
-#   mkdir -p /appdata/storage/vision/{postgres,minio,temp}
-#   mkdir -p /appdata/logs/vision/{nginx,postgres,videonizer}
-#   mkdir -p /appdata/backup/vision
+#   sudo install -d -o 1000 -g 1000 -m 755 \
+#     /appdata/storage/vision/postgres \
+#     /appdata/storage/vision/minio \
+#     /appdata/storage/vision/temp \
+#     /appdata/logs/vision/postgres \
+#     /appdata/logs/vision/videonizer \
+#     /appdata/logs/vision/nginx \
+#     /appdata/backup/vision
+#
+#   # If directories already exist with wrong ownership (e.g. docker
+#   # auto-created them as root on a previous compose-up), fix with:
+#   #   sudo chown -R 1000:1000 /appdata/storage/vision /appdata/logs/vision
 #
 #   # Operator-managed .env at /appdata/app/vision-infra/.env with
 #   # rotated credentials (POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD /

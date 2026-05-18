@@ -168,6 +168,43 @@ sudo mkdir -p /appdata/certs/vip/sso /appdata/certs/vip/idp
   인증서. `AUTH_DEV_MODE=true` (기본값) 일 때는 파일이 없어도 동작 — 디렉터리만
   존재하면 mount 통과. 운영 (`AUTH_DEV_MODE=false`) 에서는 IdP 발급 인증서를 배치.
 
+### 3) 스토리지 / 로그 / 백업 디렉터리 (운영용)
+
+운영(`docker-compose.prod.yml`) 에서 postgres / minio / videonizer 는 모두
+컨테이너 안에서 **UID/GID 1000** 으로 돌고, 데이터·로그를
+`/appdata/storage/vision`, `/appdata/logs/vision` 밑으로 bind-mount 합니다.
+
+호스트 디렉터리는 compose-up 전에 **반드시 UID 1000 소유로 미리** 만들어
+둬야 합니다. 그냥 `mkdir -p` 로 만들면 root 소유가 되고, docker 가 알아서
+만들게 두면 역시 root 소유로 자동 생성됩니다 — 그 상태에서는 videonizer 가
+부팅 도중 `/srv/tmp` 에 쓰지 못해 EACCES 로 실패합니다 (postgres / minio 도
+같은 패턴).
+
+`install -d` 로 소유자·권한을 한 번에 박아두는 게 가장 안전합니다:
+
+```bash
+sudo install -d -o 1000 -g 1000 -m 755 \
+  /appdata/storage/vision/postgres \
+  /appdata/storage/vision/minio \
+  /appdata/storage/vision/temp \
+  /appdata/logs/vision/postgres \
+  /appdata/logs/vision/videonizer \
+  /appdata/logs/vision/nginx \
+  /appdata/backup/vision
+```
+
+이미 root 소유로 만들어진 상태라면 (예: 이전 compose-up 에서 docker 가
+자동 생성), 재배포 없이 다음으로 복구할 수 있습니다:
+
+```bash
+sudo chown -R 1000:1000 /appdata/storage/vision /appdata/logs/vision
+sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+> 로컬 dev (`docker-compose.dev.yml`) 는 postgres/minio 데이터를 named volume
+> (`pgdata`, `miniodata`) 으로 쓰고, videonizer 의 `TEMP_DIR` 도 컨테이너
+> 내부 경로를 그대로 씁니다. 따라서 이 섹션은 운영 호스트에서만 필요합니다.
+
 ## 로컬 dev 실행
 
 ```bash
