@@ -124,6 +124,15 @@ ALTER TABLE resources ADD COLUMN created_by TEXT;  -- 업로드 시 세션에서
 
 ---
 
+## 진행 현황 (2026-05-26)
+
+- [x] 1 정책 `permissions.py` (Perm + ROLE_PERMS + resolver)
+- [x] 2 스키마 + 백필 (`users.system_role`, `project_members`, `resources.created_by`)
+- [x] 3 강제 — projects·resources·images·labelsets·segment 전 라우터 `authz.ensure`
+- [x] 4 관리 — 부트스트랩 admin(`AUTH_BOOTSTRAP_ADMINS`), 멤버 라우터, admin 라우터, dev `?as=`, capability 플래그(`/auth/me`·프로젝트 응답)
+- [ ] 5 프론트 — `Can`, 게이팅, `/admin`, 프로젝트 설정 멤버 탭, dev 스위처
+- [ ] vision `API_CONTRACT.md` 미러 동기화 (프론트 착수 시)
+
 ## 5. 레포별 작업
 
 ### 5.1 videonizer (백엔드) — 권한의 단일 진실원

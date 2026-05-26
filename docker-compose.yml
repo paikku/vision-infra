@@ -104,6 +104,10 @@ services:
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # RBAC bootstrap: comma-separated login_ids promoted to system
+      # admin on login. The only way to mint the first admin; everyone
+      # else defaults to 'member'. Empty = no bootstrap admins.
+      AUTH_BOOTSTRAP_ADMINS: ${AUTH_BOOTSTRAP_ADMINS:-}
       # IdP signing-cert path. /v1/auth/callback opens this file via
       # AUTH_CERT_PATH to verify id_token RS256 signatures. Matching
       # cert mount is below.
