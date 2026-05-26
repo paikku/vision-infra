@@ -130,8 +130,10 @@ ALTER TABLE resources ADD COLUMN created_by TEXT;  -- 업로드 시 세션에서
 - [x] 2 스키마 + 백필 (`users.system_role`, `project_members`, `resources.created_by`)
 - [x] 3 강제 — projects·resources·images·labelsets·segment 전 라우터 `authz.ensure`
 - [x] 4 관리 — 부트스트랩 admin(`AUTH_BOOTSTRAP_ADMINS`), 멤버 라우터, admin 라우터, dev `?as=`, capability 플래그(`/auth/me`·프로젝트 응답)
-- [ ] 5 프론트 — `Can`, 게이팅, `/admin`, 프로젝트 설정 멤버 탭, dev 스위처
-- [ ] vision `API_CONTRACT.md` 미러 동기화 (프론트 착수 시)
+- [x] 5 프론트 — 플래그 소비 타입, 프로젝트 생성/수정/삭제/멤버 게이팅, 멤버 관리 모달, `/admin` 사용자 역할 페이지, UserMenu의 시스템 관리 링크 + dev `?as=` 스위처, 라벨셋 삭제 소유권 게이팅
+- [x] vision `API_CONTRACT.md` 미러 동기화
+
+**남은 검증(샌드박스 한계):** videonizer 기능 테스트는 numpy/torch 부재로, 프론트는 브라우저 미연결로 CI/실환경 확인 필요. 정책·인가는 `test_authz`로, 프론트는 typecheck·lint·build로 검증 완료.
 
 ## 5. 레포별 작업
 
