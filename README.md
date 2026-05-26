@@ -65,6 +65,7 @@ redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
 | postgres / minio 리소스 한도 | **`vision-infra`** | `docker-compose.prod.yml` |
 | 서비스 의존성 / healthcheck | **`vision-infra`** | `docker-compose.yml` |
 | 운영자 env (레지스트리, 자격증명, 태그, **AUTH_***) | **`vision-infra`** | `.env` |
+| 권한(RBAC) 정책 · 기능별 게이트 레지스트리 | `vision` / `videonizer` | `AUTHORIZATION.md` (정책 소스 `videonizer/app/permissions.py`) |
 | CI 빌드 로직 (재사용) | **`vision-infra`** | `.github/workflows/reusable-build-push.yml` |
 | CI 빌드 호출 (얇은 caller) | `vision`, `videonizer` | 각자 `.github/workflows/build.yml` |
 

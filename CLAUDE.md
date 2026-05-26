@@ -42,6 +42,12 @@ Read `README.md` (operator-facing, Korean) and `docs/architecture.md`
      *before* any migration runs — postgres extensions, role grants.
      If a PR adds a `CREATE TABLE` to `db/init/`, reject it and move
      the change into a videonizer alembic revision.
+   - **Authorization (RBAC) lives in the app repos.** The policy +
+     which-feature-needs-a-gate registry is `AUTHORIZATION.md` (mirrored
+     in `vision` and `videonizer`); the policy source is
+     `videonizer/app/permissions.py`. This repo only seeds the first
+     admin via `AUTH_BOOTSTRAP_ADMINS` in `.env` — no routing or schema
+     role logic here.
 
 3. **Language scope.**
    - Docs (`docs/*.md`, `CLAUDE.md`, `AGENTS.md`, code comments) →
