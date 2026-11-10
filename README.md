@@ -378,6 +378,36 @@ docker compose --env-file /appdata/app/vision-infra/.env \
   -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
+## PHPI — 외부 모델 판정 이미지
+
+외부 모델 서버가 판정한 이미지를 받아 진성/가성을 검수하고, 카테고리별 콘피던스
+상·하한을 조정하고, 통계를 보는 기능이다. 화면은 `https://<host>/phpi` (vision),
+API 는 `/v1/phpi/*` (videonizer) 이며 둘 다 기존 엣지 라우팅을 그대로 쓴다 —
+nginx 변경은 없다.
+
+| Var | 기본 | 동작 |
+|---|---|---|
+| `PHPI_INGEST_API_KEY` | (빈 값) | 외부 모델 서버가 `POST /v1/phpi/items` 에 `X-API-Key` 헤더로 보내는 공유 키. 비어 있으면 수신 API 는 항상 401. |
+| `PHPI_RETENTION_DAYS` | `365` | 이 일수가 지난 판정 이미지(DB row + MinIO 이미지)는 검수 여부와 무관하게 자동 삭제. `0` = 삭제 안 함. |
+
+**수신 켜기**
+
+1. `.env` 에 `PHPI_INGEST_API_KEY` 를 설정한다 (`openssl rand -hex 32`).
+2. `docker compose ... up -d videonizer` 로 videonizer 를 다시 띄운다.
+3. 같은 키와 주소 `https://<host>/v1/phpi/items` 를 외부 서버 담당자에게 전달한다.
+   요청 규격은 `videonizer/API_CONTRACT.md` §8 에 있다.
+
+외부 서버는 엣지 nginx 의 443 포트로 들어온다. 운영 인증서가 사설 CA 라면 외부
+서버가 그 CA 를 신뢰해야 한다. 엣지에는 IP 제한이 없으므로, 보낼 서버가 정해져
+있다면 호스트 방화벽에서 그 서버만 허용하는 것을 권장한다.
+
+**디스크**
+
+이미지는 MinIO(`/appdata/storage/vision/minio`)의 `phpi/items/{yyyymmdd}/` 아래에
+쌓인다. 하루 18,000 장 × 100KB 기준으로 하루 약 1.8GB, 보관 365 일이면 최대 약
+660GB 다. 운영 전에 해당 디스크에 700GB 이상 여유가 있는지 확인한다. 보관 기간이
+지난 데이터는 videonizer 가 1 시간마다 하루 단위로 지우며 되돌릴 수 없다.
+
 ## 외부 클라이언트 직접 접근 (Postgres / MinIO)
 
 운영(prod)에서는 `docker-compose.prod.yml` 이 호스트 포트 **5432
