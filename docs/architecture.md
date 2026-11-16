@@ -85,11 +85,27 @@ where each service is hit on its own port. Cookie domain stays
 empty for same-origin deployments and switches to `.your-domain`
 only when vision and videonizer are split across sub-domains.
 
+## Machine callers (PHPI ingest)
+
+Every route behind the edge authenticates with the session cookie except
+one: `POST /v1/phpi/items`, called by an external model server that pushes
+judged images. It rides the ordinary `/v1/*` location — no dedicated nginx
+block — and authenticates in videonizer with a shared `X-API-Key` secret
+(`PHPI_INGEST_API_KEY`; empty disables ingest). The edge does no IP
+filtering or rate limiting for it; restrict the sender at the host firewall
+if it is a known address. The PHPI pages (`/phpi/*`) are ordinary vision
+routes and fall through to `location /`.
+
+PHPI image blobs land in the same MinIO bucket under `phpi/items/` and are
+deleted by videonizer after `PHPI_RETENTION_DAYS`. At the expected volume
+(~18k images/day, ~100 KB each) a one-year window holds up to ~660 GB, so
+the MinIO data mount must be sized for it.
+
 ## env var ownership
 
 - **`vision-infra/.env`** — operator-owned. POSTGRES_*, MINIO_ROOT_*,
-  AUTH_* (SSO + cookie attributes), image tags, edge port overrides.
-  Source of truth for the stack.
+  AUTH_* (SSO + cookie attributes), PHPI_* (ingest key + retention),
+  image tags, edge port overrides. Source of truth for the stack.
 - **`videonizer/.env`** — app-owned (DATABASE_URL, MINIO_*, app
   knobs). In the stack, the operator's `.env` mirrors these values so
   both `videonizer-migrate` and `videonizer` get a consistent

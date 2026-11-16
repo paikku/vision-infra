@@ -108,6 +108,13 @@ services:
       # admin on login. The only way to mint the first admin; everyone
       # else defaults to 'member'. Empty = no bootstrap admins.
       AUTH_BOOTSTRAP_ADMINS: ${AUTH_BOOTSTRAP_ADMINS:-}
+      # PHPI ingest. The external model server authenticates to
+      # POST /v1/phpi/items with this shared key (X-API-Key). Empty =
+      # ingest off (every push is rejected with 401).
+      PHPI_INGEST_API_KEY: ${PHPI_INGEST_API_KEY:-}
+      # PHPI items (rows + MinIO blobs) older than this are deleted by
+      # videonizer's background sweep. 0 = keep forever.
+      PHPI_RETENTION_DAYS: ${PHPI_RETENTION_DAYS:-365}
       # IdP signing-cert path. /v1/auth/callback opens this file via
       # AUTH_CERT_PATH to verify id_token RS256 signatures. Matching
       # cert mount is below.
