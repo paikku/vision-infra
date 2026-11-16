@@ -123,6 +123,22 @@ services:
         max-size: "100m"
         max-file: "10"
 
+  videonizer-loadfiller:
+    user: "1000:1000"
+    # Hard backstops behind the agent's own control loop, sized for the
+    # highest allowed target (80 % of 16 vCPU / 31Gi). The agent reads the
+    # memory limit and keeps its ballast 512M under it.
+    deploy:
+      resources:
+        limits:
+          cpus: "13"
+          memory: 24G
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
   vision:
     deploy:
       resources:

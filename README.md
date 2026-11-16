@@ -63,6 +63,8 @@ redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
 | IdP 서명 인증서 (dev/prod 동일) | 운영 호스트 | `/appdata/certs/vip/idp/saml-signing.pem` (base compose 가 :ro 마운트) |
 | postgres 익스텐션 (스키마 *전*) | **`vision-infra`** | `db/init/*.sql` |
 | postgres / minio 리소스 한도 | **`vision-infra`** | `docker-compose.prod.yml` |
+| 유휴 부하 필러 실행 방식 (우선순위·한도) | **`vision-infra`** | `docker-compose.yml`, `docker-compose.prod.yml` |
+| 유휴 부하 필러 동작 / 가동률 기록 | `videonizer` | `app/loadfiller/` |
 | 서비스 의존성 / healthcheck | **`vision-infra`** | `docker-compose.yml` |
 | 운영자 env (레지스트리, 자격증명, 태그, **AUTH_***) | **`vision-infra`** | `.env` |
 | 권한(RBAC) 정책 · 기능별 게이트 레지스트리 | `vision` / `videonizer` | `AUTHORIZATION.md` (정책 소스 `videonizer/app/permissions.py`) |
@@ -407,6 +409,53 @@ nginx 변경은 없다.
 쌓인다. 하루 18,000 장 × 100KB 기준으로 하루 약 1.8GB, 보관 365 일이면 최대 약
 660GB 다. 운영 전에 해당 디스크에 700GB 이상 여유가 있는지 확인한다. 보관 기간이
 지난 데이터는 videonizer 가 1 시간마다 하루 단위로 지우며 되돌릴 수 없다.
+
+## 서버 가동률 보정 (유휴 부하 필러)
+
+서버가 한가할 때 CPU·메모리 사용률을 목표치까지 채워 호스트 가동률을 올리고,
+가동률을 1 분마다 기록하는 `videonizer-loadfiller` 서비스다. videonizer 이미지를
+그대로 쓰고 실행 명령만 다르므로 추가로 받을 이미지는 없다.
+
+**켜기 / 끄기**
+
+1. 스택을 올리면 `videonizer-loadfiller` 가 함께 뜬다. 기본은 **꺼짐** 이고,
+   꺼져 있어도 가동률은 계속 기록한다.
+2. 관리자 계정으로 `https://<host>/admin` → **서버 가동률** 탭에서 스위치를 켠다.
+   5 초 안에 반영된다.
+3. 같은 화면에서 CPU·메모리 목표치(50~80%, 기본 75%)를 바꾸고, 최근 24 시간 /
+   7 일 가동률 기록을 본다. 기록은 "실제 사용"과 "필러"가 구분되어 있고, 7 일이
+   지난 기록은 자동으로 지워진다.
+
+화면에 접속할 수 없을 때 급히 끄려면 컨테이너를 멈춘다. 채운 CPU·메모리는 즉시
+반납된다 (가동률 기록도 함께 멈춘다).
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml stop videonizer-loadfiller
+```
+
+**실제 작업에 영향을 주지 않는 방식**
+
+- 목표치는 "실제 사용 + 필러"의 합이다. 실제 사용이 늘면 필러가 그만큼 줄고,
+  실제 사용이 목표를 넘으면 필러는 0 이 된다.
+- 컨테이너가 최저 CPU 우선순위(`cpu_shares: 2`)로 돌아서, 다른 서비스가 CPU 를
+  쓰려 하면 커널이 필러를 먼저 밀어낸다. **이 설정은 지우면 안 된다** — 없으면
+  무거운 작업이 시작될 때 몇 초간 느려진다. 시작 로그에
+  `loadfiller.cpu_weight_not_minimal` 경고가 보이면 이 설정이 빠진 것이다.
+- 메모리는 호스트 여유 메모리를 항상 `LOADFILLER_MEM_FLOOR_MB` (기본 4096MB)
+  이상 남기고, 메모리가 부족해지면 커널이 필러부터 종료한다 (`oom_score_adj`).
+- DB 에서 설정을 20 초 넘게 확인하지 못하면 스스로 꺼진다.
+
+**알아둘 점**
+
+- 가동률은 **호스트 전체** 기준이다. 메모리 사용률은 `1 − MemAvailable/MemTotal`
+  로 계산하므로 페이지 캐시는 "사용"으로 치지 않는다. 사내 모니터링이 다른
+  기준(예: 캐시 포함)이라면 화면 수치와 차이가 날 수 있다.
+- 필러가 채운 메모리만큼 OS 페이지 캐시가 줄어든다. 디스크 읽기가 많은 작업이
+  느려진다면 메모리 목표치를 낮춘다.
+- 물리 코어·캐시·전력은 여전히 공유한다. 하이퍼스레딩 환경에서는 CPU 를 꽉 채워
+  쓰는 작업이 소폭 느려질 수 있고, 전력 사용량과 발열은 가동률만큼 늘어난다.
+- 운영 한도(`docker-compose.prod.yml` 의 `cpus: "13"` / `memory: 24G`)는
+  16 vCPU / 31Gi 호스트 기준 안전장치다. 호스트 사양이 바뀌면 같이 조정한다.
 
 ## 외부 클라이언트 직접 접근 (Postgres / MinIO)
 

@@ -154,6 +154,42 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  videonizer-loadfiller:
+    # Idle load filler agent: the videonizer image with a different
+    # command. Tops host CPU / memory utilization up to the admin-set
+    # targets while the host is idle and records utilization history.
+    # Off until an admin enables it on the /admin page; it still records
+    # utilization while off. It talks to postgres only — no HTTP port.
+    image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/videonizer:${VIDEONIZER_TAG:-dev}
+    networks: [vision_net]
+    command: ["python", "-m", "app.loadfiller"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-videonizer}:${POSTGRES_PASSWORD:-videonizer}@postgres:5432/${POSTGRES_DB:-videonizer}}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # The memory ballast never leaves the host with less MemAvailable
+      # than this, whatever the target says.
+      LOADFILLER_MEM_FLOOR_MB: ${LOADFILLER_MEM_FLOOR_MB:-4096}
+    env_file:
+      - path: ./.env
+        required: false
+    # Load-bearing — do not remove. The agent's workers are SCHED_IDLE,
+    # but that only orders tasks inside this container; across containers
+    # the kernel compares cgroup CPU weights. The minimum weight is what
+    # makes the filler yield to every other service.
+    cpu_shares: 2
+    # If the host ever runs out of memory, the ballast is what gets killed.
+    oom_score_adj: 1000
+    # The image's HEALTHCHECK probes the API's :8000, which this
+    # container never serves.
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      videonizer-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   vision:
     image: ${REGISTRY_URL:?set REGISTRY_URL in .env}/${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}/vision:${VISION_TAG:-dev}
     networks: [vision_net]
