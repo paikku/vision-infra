@@ -65,6 +65,8 @@ redirect. HSTS 헤더 1년. 세션은 `/v1/auth/callback` 가 발급한
 | postgres / minio 리소스 한도 | **`vision-infra`** | `docker-compose.prod.yml` |
 | 유휴 부하 필러 실행 방식 (우선순위·한도) | **`vision-infra`** | `docker-compose.yml`, `docker-compose.prod.yml` |
 | 유휴 부하 필러 동작 / 가동률 기록 | `videonizer` | `app/loadfiller/` |
+| GPU 워커 (학습·추론 실행, GPU 유휴 채우기) | `videonizer` | `gpu_worker/` — GPU 서버에 따로 설치 |
+| GPU 워커 연결 키 | **`vision-infra`** | `.env` 의 `GPU_WORKER_API_KEY` |
 | 서비스 의존성 / healthcheck | **`vision-infra`** | `docker-compose.yml` |
 | 운영자 env (레지스트리, 자격증명, 태그, **AUTH_***) | **`vision-infra`** | `.env` |
 | 권한(RBAC) 정책 · 기능별 게이트 레지스트리 | `vision` / `videonizer` | `AUTHORIZATION.md` (정책 소스 `videonizer/app/permissions.py`) |
@@ -456,6 +458,52 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml stop videonizer-
   쓰는 작업이 소폭 느려질 수 있고, 전력 사용량과 발열은 가동률만큼 늘어난다.
 - 운영 한도(`docker-compose.prod.yml` 의 `cpus: "13"` / `memory: 24G`)는
   16 vCPU / 31Gi 호스트 기준 안전장치다. 호스트 사양이 바뀌면 같이 조정한다.
+
+## GPU 서버 (학습 · 추론 워커)
+
+모델 학습과 추론은 이 스택이 아니라 **별도 GPU 서버(Windows)** 에서 돈다. GPU
+서버에는 `videonizer` 레포의 `gpu_worker` 를 Python 으로 설치해 띄우고, 그 워커가
+이 스택의 API 를 몇 초마다 조회해서 작업을 받아 간다. 이 스택에 추가되는 서비스나
+이미지는 없고, nginx 변경도 없다.
+
+| Var | 기본 | 동작 |
+|---|---|---|
+| `GPU_WORKER_API_KEY` | (빈 값) | 워커가 `/v1/gpu/worker/*` 에 `X-API-Key` 헤더로 보내는 공유 키. 비어 있으면 워커가 붙을 수 없다 (학습 요청은 받아서 큐에 쌓아 둔다). |
+
+**워커 붙이기**
+
+1. `.env` 에 `GPU_WORKER_API_KEY` 를 설정한다 (`openssl rand -hex 32`).
+2. `docker compose ... up -d videonizer` 로 videonizer 를 다시 띄운다.
+3. GPU 서버에 워커를 설치하고 같은 키와 주소 `https://<host>` 를 넣어 실행한다.
+   설치·환경 변수는 `videonizer/README.md` 의 "GPU 워커" 절에 있다.
+4. 붙었는지는 `GET /v1/gpu/status` 의 `workers[].alive` 로 확인한다.
+
+**네트워크**
+
+- GPU 서버에서 이 호스트의 **443 으로 나가는 연결만** 있으면 된다. GPU 서버로
+  들어오는 포트, Postgres·MinIO 접근, 그 계정은 필요 없다.
+- 운영 인증서가 사설 CA 라면 워커의 `GPU_WORKER_CA_BUNDLE` 에 그 CA 를 지정한다.
+- 엣지에는 IP 제한이 없다. GPU 서버 주소가 정해져 있다면 호스트 방화벽에서
+  `/v1/gpu/worker/` 호출을 그 서버로 제한하는 것을 권장한다.
+- 워커는 체크포인트·가중치(수백 MB)를 엣지를 거쳐 올린다. `nginx/nginx.conf` 의
+  `client_max_body_size 2g` 와 3600 초 타임아웃을 낮추면 학습이 깨진다.
+
+**데이터가 있는 곳**
+
+- 작업 큐와 모델 목록은 Postgres, 모델 가중치·학습 체크포인트는 MinIO
+  (`/appdata/storage/vision/minio` 의 `models/`, `projects/*/gpu-jobs/`) 에 있다.
+  기존 백업에 그대로 포함된다.
+- GPU 서버에는 캐시만 있다. GPU 서버를 교체해도 모델은 잃지 않는다.
+- 모델 하나는 구조에 따라 약 6~120MB 이고, 진행 중인 학습마다 그 3 배쯤 되는
+  체크포인트가 하나 더 있다. 모델은 누가 지우기 전까지 남는다.
+
+**GPU 서버가 꺼져 있으면** 학습·추론 요청은 큐에서 기다리고 나머지 기능은 그대로
+동작한다. 워커가 응답 없이 90 초가 지나면 돌던 작업은 큐로 돌아가고, 워커가 다시
+붙으면 마지막 체크포인트에서 이어 간다.
+
+**GPU 유휴 채우기** 는 위의 `videonizer-loadfiller` 와 별개다. 그 서비스는 이
+호스트의 CPU·메모리를, GPU 채우기는 GPU 서버의 GPU 를 채운다. 관리자가
+`PATCH /v1/gpu/filler` 로 따로 켠다 (기본 꺼짐).
 
 ## 외부 클라이언트 직접 접근 (Postgres / MinIO)
 

@@ -115,6 +115,11 @@ services:
       # PHPI items (rows + MinIO blobs) older than this are deleted by
       # videonizer's background sweep. 0 = keep forever.
       PHPI_RETENTION_DAYS: ${PHPI_RETENTION_DAYS:-365}
+      # GPU worker. The worker on the GPU machine (outside this stack)
+      # authenticates to /v1/gpu/worker/* with this shared key
+      # (X-API-Key). Empty = no worker can attach; training requests
+      # are still accepted and wait in the queue.
+      GPU_WORKER_API_KEY: ${GPU_WORKER_API_KEY:-}
       # IdP signing-cert path. /v1/auth/callback opens this file via
       # AUTH_CERT_PATH to verify id_token RS256 signatures. Matching
       # cert mount is below.
