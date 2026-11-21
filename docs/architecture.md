@@ -102,6 +102,39 @@ deleted by videonizer after `PHPI_RETENTION_DAYS`. At the expected volume
 (~18k images/day, ~100 KB each) a one-year window holds up to ~660 GB, so
 the MinIO data mount must be sized for it.
 
+## GPU worker (outside the stack)
+
+Model training and inference do not run in any service of this compose
+stack. They run on a separate GPU machine (Windows), in a worker process
+that ships in the `videonizer` repo (`gpu_worker/`) and is installed there
+as plain Python — it is not an image and has no service here.
+
+- **The worker dials in; nothing dials out.** It polls
+  `https://<host>/v1/gpu/worker/*` every few seconds. Like the PHPI ingest
+  it rides the ordinary `/v1/*` location and authenticates in videonizer
+  with a shared `X-API-Key` (`GPU_WORKER_API_KEY`; empty = no worker can
+  attach). The GPU machine needs outbound 443 to the edge and nothing else:
+  no inbound port, no route to postgres or minio, no credentials for either.
+- **The edge's upload limits are load-bearing for it.** A worker uploads
+  checkpoints and trained weights (hundreds of MB) and downloads datasets
+  through the edge. `client_max_body_size 2g`, `proxy_request_buffering
+  off` and the 3600 s proxy timeouts in `nginx/nginx.conf` are what let
+  those through — lowering them breaks training, not just video upload.
+- **The stack holds all state.** The job queue and model metadata are in
+  postgres; model weights (`models/`), dataset snapshots and checkpoints
+  (`projects/{id}/gpu-jobs/`) are in the MinIO bucket, so they are covered
+  by the same backups. The GPU machine keeps only a cache; it can be
+  rebuilt or replaced without losing a model.
+- **The stack runs fine without it.** With no worker attached, training
+  requests queue and everything else is unaffected.
+- **Its idle filler is unrelated to `videonizer-loadfiller`.** That service
+  tops up this host's CPU and memory; the GPU filler tops up the GPU on the
+  worker's machine and is switched on separately (`/v1/gpu/filler`).
+
+MinIO sizing: a trained model is ~6–120 MB depending on the architecture,
+and each unfinished training job holds one checkpoint about three times its
+model's size. Models are kept until someone deletes them.
+
 ## Idle load filler
 
 `videonizer-loadfiller` raises host-wide CPU and memory utilization to an
@@ -141,6 +174,8 @@ repo owns only how it is run.
 
 - **`vision-infra/.env`** — operator-owned. POSTGRES_*, MINIO_ROOT_*,
   AUTH_* (SSO + cookie attributes), PHPI_* (ingest key + retention),
+  GPU_WORKER_API_KEY (the GPU worker's shared key — the same value is
+  set on the GPU machine, outside this repo),
   image tags, edge port overrides. Source of truth for the stack.
 - **`videonizer/.env`** — app-owned (DATABASE_URL, MINIO_*, app
   knobs). In the stack, the operator's `.env` mirrors these values so
