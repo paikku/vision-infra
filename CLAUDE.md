@@ -57,19 +57,7 @@ Read `README.md` (operator-facing, Korean) and `docs/architecture.md`
      replies → **Korean**. No conventional-commit prefixes
      (`feat:`, `fix:`, etc.).
 
-4. **Commits authored as `paikku`.** The sandbox default is
-   `Claude <noreply@anthropic.com>`, so set the four env vars inline
-   on every commit:
-
-   ```bash
-   GIT_AUTHOR_NAME="paikku" GIT_AUTHOR_EMAIL="jungi_@naver.com" \
-   GIT_COMMITTER_NAME="paikku" GIT_COMMITTER_EMAIL="jungi_@naver.com" \
-   git commit -m "<제목>" -m "<본문>"
-   ```
-
-   Never touch `git config --global`.
-
-5. **No abstraction beyond the request.** Don't templatize a value
+4. **No abstraction beyond the request.** Don't templatize a value
    that has one caller, don't add a service for hypothetical future
    use, don't rename a working compose service for "consistency".
    Compose stays boring.
