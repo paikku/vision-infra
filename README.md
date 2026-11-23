@@ -400,6 +400,7 @@ scripts/build-push.sh
 # 2) 운영 호스트 (이 레포, .env, docker login 완료)
 #    이 레포를 origin/main 으로 checkout → 지금 이미지를 :prev-<시각> 으로 보관
 #    → pull → videonizer·loadfiller·vision 재시작 → healthy 될 때까지 대기
+#    → 엣지 nginx reload (새로 만든 컨테이너 주소를 다시 읽게 함. 안 하면 502)
 scripts/deploy.sh
 ```
 

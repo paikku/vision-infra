@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Service host: bring this repo up to date with `origin/main`, keep the images
 # now in use under a `prev-<stamp>` tag, pull the new app images, restart the
-# app services, and wait until they report healthy.
+# app services, wait until they report healthy, and reload the edge nginx.
 #
 #   scripts/deploy.sh                # videonizer (+ migrate, loadfiller) and vision
 #   scripts/deploy.sh vision         # vision only
@@ -78,6 +78,10 @@ main() {
     fi
     sleep 3
   done
+  # nginx resolved the app containers' addresses when it started; the ones
+  # just recreated have new addresses, so it would answer 502 until reloaded.
+  step "reload edge nginx"
+  "${dc[@]}" exec -T nginx nginx -s reload
   "${dc[@]}" ps "${pull[@]}"
   step "done"
   rollback_hint "$stamp" "${up[*]}" "${kept[@]}"
@@ -92,6 +96,7 @@ rollback_hint() {
   echo "to roll back (database migrations are not undone):"
   for img in "$@"; do echo "  docker tag ${img%:*}:prev-$stamp $img"; done
   echo "  docker compose --env-file $PWD/.env -f docker-compose.yml -f docker-compose.prod.yml up -d $services"
+  echo "  docker compose --env-file $PWD/.env -f docker-compose.yml -f docker-compose.prod.yml exec nginx nginx -s reload"
 }
 
 # Kept on one line: the checkout above can rewrite this very file, and bash
