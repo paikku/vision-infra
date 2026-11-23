@@ -26,11 +26,19 @@ main() {
     echo "local changes in vision-infra — stopping" >&2
     return 1
   fi
-  local before
+  local before self self_sum
   before="$(git rev-parse --short HEAD)"
+  self="$root/scripts/$(basename "$0")"
+  self_sum="$(cksum < "$self")"
   git fetch "$remote" main
   git checkout --detach "$remote/main"
   echo "vision-infra: $before -> $(git rev-parse --short HEAD)"
+  # The checkout may have replaced this script; the steps below must be the
+  # new version's, so run that instead of finishing the old one.
+  if [ -z "${DEPLOY_REEXEC:-}" ] && [ "$(cksum < "$self")" != "$self_sum" ]; then
+    echo "deploy.sh changed — running the new version"
+    DEPLOY_REEXEC=1 exec "$self" "$@"
+  fi
 
   local dc=(docker compose --env-file "$root/.env" -f docker-compose.yml -f docker-compose.prod.yml)
   local apps=("$@") up=() pull=()
