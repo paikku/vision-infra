@@ -106,6 +106,9 @@ db/
   init/01-init.sql         # 첫 실행 시 postgres에 적용되는 init SQL
 docs/
   architecture.md          # 아키텍처 + 라우팅/auth 경계 + K8s 확장 노트 (영문)
+scripts/
+  build-push.sh            # 빌드 PC: 앱 레포 최신화 → 이미지 빌드 → 푸시
+  deploy.sh                # 운영 호스트: 이 레포 최신화 → 이미지 보관·pull → 재시작 → healthy 확인
 .github/workflows/
   reusable-build-push.yml  # 앱 레포에서 호출하는 재사용 워크플로
   deploy.yml               # 운영 배포 워크플로
@@ -381,6 +384,27 @@ docker compose --env-file /appdata/app/vision-infra/.env \
 docker compose --env-file /appdata/app/vision-infra/.env \
   -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
+
+### 스크립트로 빌드·배포
+
+앱 코드가 바뀌었을 때 두 스크립트를 순서대로 실행합니다. 둘 다 `origin` 의
+`main` 을 받아 오고 (다른 리모트면 `REMOTE=<이름>`), 인자로 `videonizer` /
+`vision` 하나만 줄 수 있습니다.
+
+```bash
+# 1) 빌드 PC (../videonizer, ../vision 이 형제 폴더, docker login 완료)
+#    두 앱 레포에 origin/main 을 합치고 → 운영용 이미지 빌드 → 레지스트리 푸시
+scripts/build-push.sh
+
+# 2) 운영 호스트 (이 레포, .env, docker login 완료)
+#    이 레포를 origin/main 으로 checkout → 지금 이미지를 :prev-<시각> 으로 보관
+#    → pull → videonizer·loadfiller·vision 재시작 → healthy 될 때까지 대기
+scripts/deploy.sh
+```
+
+- 커밋하지 않은 변경이 있거나 합치기에 충돌이 나면 아무것도 빌드·배포하지 않고 멈춥니다.
+- `deploy.sh` 는 끝에 되돌리는 명령(`docker tag …:prev-<시각> …` + `up -d`)을 출력합니다. DB 마이그레이션은 되돌리지 않으므로 스키마가 바뀌는 배포 전에는 평소대로 백업합니다.
+- 4분 안에 healthy 가 되지 않으면 실패로 끝나고 같은 되돌리기 명령을 출력합니다.
 
 ## PHPI — 외부 모델 판정 이미지
 
